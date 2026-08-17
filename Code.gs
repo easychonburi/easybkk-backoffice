@@ -123,8 +123,9 @@ function clockOut_(user,b) {
 }
 function myDashboard_(user) {
   const rows=sheetObjects_('timesheets').filter(x=>x.staff_id===user.staff_id).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
-  const staff=sheetObjects_('staff').find(x=>x.staff_id===user.staff_id)||user;
-  return {today:rows.find(x=>x.date===date_())||null,history:rows.slice(0,7),shift:shiftForStaff_(staff)};
+  const staff=sheetObjects_('staff').find(x=>x.staff_id===user.staff_id)||user,branches=sheetObjects_('branches'),branch=branches.find(x=>x.branch_id===staff.branch_id);
+  const clockBranches=branches.filter(x=>x.status==='active'&&x.lat&&x.lng).map(x=>({branch_id:x.branch_id,name:x.name,lat:Number(x.lat),lng:Number(x.lng),allowed_radius_m:Number(x.allowed_radius_m||200)}));
+  return {today:rows.find(x=>x.date===date_())||null,history:rows.slice(0,7),shift:shiftForStaff_(staff),profile:{staff_id:staff.staff_id,name:staff.name||'',nickname:staff.nickname||'',branch_id:staff.branch_id,branch_name:branch?branch.name:''},branches:clockBranches};
 }
 
 function adminData_() {
