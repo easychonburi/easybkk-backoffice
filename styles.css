@@ -77,6 +77,11 @@ tr:last-child td { border-bottom: 0; }
 .detail-title { margin-top: 24px; margin-bottom: 12px; }
 .payroll-times .inline-input { width: 100%; min-width: 82px; min-height: 42px; border: 1px solid var(--line); border-radius: 10px; padding: 7px 8px; background: #fff; color: var(--ink); }
 .payroll-times select.inline-input { margin-top: 6px; }
+.payroll-times tr.is-editing { background: #f5fbfe; }
+.timesheet-view { line-height: 1.5; }
+.btn-compact { min-height: 42px; padding: 8px 12px; border-radius: 11px; white-space: nowrap; }
+.ot-request { margin-bottom: 10px; }
+.ot-request-date { margin-top: 4px; }
 .adjustment-card { margin-top: 20px; padding: 18px; border: 1px solid var(--line); border-radius: 18px; background: #f8fbfc; }
 .pay-total { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin: 8px 0 16px; padding: 15px; border-radius: 14px; color: var(--navy); background: #e7f4f9; }
 .pay-total b { font-size: 1.45rem; }
@@ -138,6 +143,8 @@ body.is-loading { overflow: hidden; }
   .payroll-summary { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
   .payroll-summary .notice { padding: 11px; }
   .payroll-times table td { grid-template-columns: 92px minmax(0,1fr); }
+  .payroll-times .timesheet-edit.actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .payroll-times .btn-compact { width: 100%; }
   .adjustment-card { padding: 14px; }
   .pay-total b { font-size: 1.25rem; }
   .overlay { align-items: end; padding: 8px; }
