@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+  <title>Easy - Bubble | เข้าสู่ระบบ</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="login-shell">
+    <section class="card login-card">
+      <div class="login-logo">Easy - Bubble</div>
+      <p class="subtitle">ระบบบันทึกเวลาและเงินเดือน</p>
+      <h1 class="title" style="margin-top:25px">กรอกรหัส PIN 4 หลัก</h1>
+      <div class="pin-dots" id="dots"><i class="pin-dot"></i><i class="pin-dot"></i><i class="pin-dot"></i><i class="pin-dot"></i></div>
+      <div class="keypad" id="keypad">
+        <button class="key">1</button><button class="key">2</button><button class="key">3</button>
+        <button class="key">4</button><button class="key">5</button><button class="key">6</button>
+        <button class="key">7</button><button class="key">8</button><button class="key">9</button>
+        <button class="key" data-action="clear">ล้าง</button><button class="key">0</button><button class="key" data-action="back">⌫</button>
+      </div>
+      <p id="message" class="muted" style="min-height:26px;margin:18px 0 0">รหัสของแต่ละคนใช้สำหรับระบุตัวตน</p>
+    </section>
+  </main>
+  <div class="toast" id="toast"></div>
+  <script src="config.js"></script>
+  <script>
+    const API=window.EASY_BUBBLE_API_URL, dots=[...document.querySelectorAll('.pin-dot')], msg=document.getElementById('message');
+    let pin='',busy=false;
+    const toast=t=>{const e=document.getElementById('toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),2600)};
+    document.getElementById('keypad').onclick=e=>{const b=e.target.closest('button');if(!b||busy)return;if(b.dataset.action==='clear')pin='';else if(b.dataset.action==='back')pin=pin.slice(0,-1);else if(pin.length<4)pin+=b.textContent;paint();if(pin.length===4)login()};
+    function paint(){dots.forEach((d,i)=>d.classList.toggle('filled',i<pin.length));msg.textContent='รหัสของแต่ละคนใช้สำหรับระบุตัวตน'}
+    async function login(){if(API.includes('PASTE_'))return toast('ระบบยังไม่ได้เชื่อม Apps Script');busy=true;msg.textContent='กำลังตรวจสอบ...';try{const r=await fetch(API,{method:'POST',body:JSON.stringify({action:'login',pin})});const j=await r.json();if(!j.success)throw Error(j.message||'PIN ไม่ถูกต้อง');localStorage.setItem('eb_session',JSON.stringify(j.data));location.href=j.data.role==='admin'?'admin.html':'clock.html'}catch(e){pin='';paint();msg.textContent=e.message;toast(e.message)}finally{busy=false}}
+    try{const s=JSON.parse(localStorage.getItem('eb_session'));if(s&&s.expires>Date.now())location.href=s.role==='admin'?'admin.html':'clock.html'}catch{}
+  </script>
+</body></html>
