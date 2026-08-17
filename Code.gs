@@ -156,7 +156,7 @@ function saveBranch_(b) {
   data.branch_id=nextId_('branches','branch_id','BR');append_('branches',data);return {branch_id:data.branch_id};
 }
 function saveSettings_(obj){Object.entries(obj).forEach(([key,value])=>upsertSetting_(key,value));return settings_()}
-function saveTelegram_(b){if(b.token)PropertiesService.getScriptProperties().setProperty('TELEGRAM_BOT_TOKEN',String(b.token).trim());if(b.chat_id!==undefined)upsertSetting_('telegram_chat_id',b.chat_id);telegram_('🔔 เชื่อมต่อการแจ้งเตือน Easy - Bubble เรียบร้อย');return true}
+function saveTelegram_(b){const props=PropertiesService.getScriptProperties(),newToken=String(b.bot_token||'').trim(),token=newToken||props.getProperty('TELEGRAM_BOT_TOKEN'),chat=String(b.chat_id||'').trim();if(!token)throw Error('กรุณากรอก Bot Token');if(!chat)throw Error('กรุณากรอก Chat ID');if(!sendTelegram_(token,chat,'🔔 เชื่อมต่อการแจ้งเตือน Easy - Bubble เรียบร้อย'))throw Error('เชื่อมต่อ Telegram ไม่สำเร็จ กรุณาตรวจสอบ Bot Token และ Chat ID');if(newToken)props.setProperty('TELEGRAM_BOT_TOKEN',newToken);upsertSetting_('telegram_chat_id',chat);return true}
 
 function bulkUpsert_(b){
   if(!b.staff_id||!b.date_from||!b.date_to||!b.clock_in||!b.clock_out||!b.admin_note)throw Error('กรุณากรอกข้อมูลให้ครบ');
@@ -206,7 +206,8 @@ function finalizePayroll_(b){const items=b.items||[];if(!items.length)throw Erro
 
 function countPaidLeaveDays_(rows,month){let dates=new Set();rows.filter(x=>x.leave_type!=='unpaid').forEach(x=>dateRange_(x.date_from,x.date_to).forEach(ds=>{if(ds.startsWith(month))dates.add(ds)}));return dates.size}
 function nearestBranch_(lat,lng){if(!isFinite(lat)||!isFinite(lng))throw Error('ไม่พบข้อมูล GPS');let best=null,dist=Infinity;sheetObjects_('branches').filter(x=>x.status==='active'&&x.lat&&x.lng).forEach(x=>{const d=haversine_(lat,lng,Number(x.lat),Number(x.lng));if(d<=Number(x.allowed_radius_m||200)&&d<dist){best=x;dist=d}});if(!best)throw Error('อยู่นอกพื้นที่สาขา ไม่สามารถบันทึกเวลาได้');return best}
-function telegram_(text){try{const token=PropertiesService.getScriptProperties().getProperty('TELEGRAM_BOT_TOKEN'),chat=settings_().telegram_chat_id;if(!token||!chat)return;UrlFetchApp.fetch(`https://api.telegram.org/bot${token}/sendMessage`,{method:'post',contentType:'application/json',payload:JSON.stringify({chat_id:chat,text}),muteHttpExceptions:true})}catch(e){console.log(e)}}
+function sendTelegram_(token,chat,text){const res=UrlFetchApp.fetch(`https://api.telegram.org/bot${token}/sendMessage`,{method:'post',contentType:'application/json',payload:JSON.stringify({chat_id:chat,text}),muteHttpExceptions:true});try{return !!JSON.parse(res.getContentText()).ok}catch(_){return false}}
+function telegram_(text){try{const token=PropertiesService.getScriptProperties().getProperty('TELEGRAM_BOT_TOKEN'),chat=settings_().telegram_chat_id;if(!token||!chat)return false;return sendTelegram_(token,chat,text)}catch(e){console.log(e);return false}}
 function settings_(){const out={};sheetObjects_('settings').forEach(x=>out[x.key]=String(x.value));return out}
 function shiftById_(id){const shifts=sheetObjects_('shifts'),shift=shifts.find(x=>x.shift_id===id)||shifts.find(x=>x.status==='active');if(!shift)throw Error('ยังไม่ได้ตั้งค่ากะงาน');return{...shift,start_time:timeText_(shift.start_time),end_time:timeText_(shift.end_time)}}
 function shiftForStaff_(staff){return shiftById_(staff.shift_id)}

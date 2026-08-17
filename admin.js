@@ -9,7 +9,7 @@ function localYMD(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStar
 function thaiDate(v){const m=String(v||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);if(!m)return v||'—';return new Date(Number(m[1]),Number(m[2])-1,Number(m[3])).toLocaleDateString('th-TH',{weekday:'short',day:'numeric',month:'short',year:'numeric'})}
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 qsa('.time24').forEach(x=>x.addEventListener('blur',()=>x.value=time24(x.value)));
-async function call(action,body={}){startLoading(loadingMessages[action]);try{const r=await fetch(API,{method:'POST',body:JSON.stringify({action,token:session.token,...body})});const j=await r.json();if(!j.success)throw Error(j.message||'ทำรายการไม่สำเร็จ');return j.data}finally{stopLoading()}}
+async function call(action,body={}){startLoading(loadingMessages[action]);try{const r=await fetch(API,{method:'POST',body:JSON.stringify({...body,action,token:session.token})});const j=await r.json();if(!j.success)throw Error(j.message||'ทำรายการไม่สำเร็จ');return j.data}finally{stopLoading()}}
 qsa('.tab').forEach(b=>b.onclick=()=>{qsa('.tab').forEach(x=>x.classList.remove('active'));qsa('.panel').forEach(x=>x.classList.remove('active'));b.classList.add('active');qs('#'+b.dataset.panel).classList.add('active');if(b.dataset.panel==='payroll')loadPayroll()});
 const formObj=f=>{const o=Object.fromEntries(new FormData(f).entries());qsa('.time24',f).forEach(x=>o[x.name]=time24(x.value));return o};
 function setForm(f,obj){f.reset();Object.entries(obj||{}).forEach(([k,v])=>{if(f.elements[k])f.elements[k].value=v??''})}
@@ -48,5 +48,5 @@ function openBranch(id=''){const x=state.branches.find(s=>s.branch_id===id)||{al
 function captureBranchGPS(){startLoading('กำลังอ่านตำแหน่ง GPS...');navigator.geolocation.getCurrentPosition(p=>{const f=branchModal.querySelector('form');f.elements.lat.value=p.coords.latitude;f.elements.lng.value=p.coords.longitude;stopLoading();toast('นำตำแหน่งปัจจุบันมาใส่แล้ว')},()=>{stopLoading();toast('อ่านตำแหน่งไม่ได้ กรุณาเปิด GPS')},{enableHighAccuracy:true,timeout:15000,maximumAge:0})}
 async function saveBranch(e){e.preventDefault();try{await call('saveBranch',formObj(e.target));branchModal.classList.remove('show');toast('บันทึกสาขาแล้ว');await init()}catch(x){toast(x.message)}}
 async function saveSettings(e){e.preventDefault();try{await call('saveSettings',{settings:formObj(e.target)});toast('บันทึกกฎแล้ว');await init()}catch(x){toast(x.message)}}
-async function saveTelegram(e){e.preventDefault();try{await call('saveTelegram',formObj(e.target));toast('บันทึก Telegram แล้ว');e.target.elements.token.value=''}catch(x){toast(x.message)}}
+async function saveTelegram(e){e.preventDefault();try{await call('saveTelegram',formObj(e.target));toast('เชื่อมต่อ Telegram เรียบร้อย');e.target.elements.bot_token.value=''}catch(x){toast(x.message)}}
 function logout(){localStorage.removeItem('eb_session');location.href='index.html'}init();
