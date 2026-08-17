@@ -21,6 +21,8 @@ function setupSystem() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   PropertiesService.getScriptProperties().setProperty('SHEET_ID', ss.getId());
   Object.keys(SHEETS).forEach(name => ensureSheet_(name, SHEETS[name]));
+  formatTimeColumns_('shifts',['start_time','end_time']);
+  formatTimeColumns_('timesheets',['clock_in','clock_out','shift_start','shift_end']);
   const settings = sheetObjects_('settings');
   const defaults = [
     ['shop_name','Easy - Bubble','ชื่อร้าน'],['shift_start','09:00','เวลาเริ่มงาน'],['shift_end','18:00','เวลาเลิกงาน'],
@@ -137,8 +139,8 @@ function saveStaff_(b) {
 }
 function saveShift_(b) {
   if(!String(b.name||'').trim())throw Error('กรุณาตั้งชื่อกะ');
-  if(!/^\d{2}:\d{2}$/.test(b.start_time||'')||!/^\d{2}:\d{2}$/.test(b.end_time||''))throw Error('กรุณากรอกเวลาเริ่มและเลิกงาน');
-  const data={name:String(b.name).trim(),start_time:b.start_time,end_time:b.end_time,late_grace_min:Math.max(0,Number(b.late_grace_min||0)),ot_grace_min:Math.max(0,Number(b.ot_grace_min||0)),status:b.status||'active'};
+  if(!validTime_(b.start_time)||!validTime_(b.end_time))throw Error('กรุณากรอกเวลาแบบ 24 ชั่วโมง เช่น 09:00');
+  const data={name:String(b.name).trim(),start_time:timeText_(b.start_time),end_time:timeText_(b.end_time),late_grace_min:Math.max(0,Number(b.late_grace_min||0)),ot_grace_min:Math.max(0,Number(b.ot_grace_min||0)),status:b.status||'active'};
   if(b.shift_id){updateById_('shifts','shift_id',b.shift_id,data);return {shift_id:b.shift_id}}
   data.shift_id=nextId_('shifts','shift_id','SH');data.created_at=iso_();append_('shifts',data);return {shift_id:data.shift_id};
 }
@@ -153,6 +155,8 @@ function saveTelegram_(b){if(b.token)PropertiesService.getScriptProperties().set
 
 function bulkUpsert_(b){
   if(!b.staff_id||!b.date_from||!b.date_to||!b.clock_in||!b.clock_out||!b.admin_note)throw Error('กรุณากรอกข้อมูลให้ครบ');
+  if(!validTime_(b.clock_in)||!validTime_(b.clock_out))throw Error('กรุณากรอกเวลาแบบ 24 ชั่วโมง เช่น 09:00');
+  b.clock_in=timeText_(b.clock_in);b.clock_out=timeText_(b.clock_out);
   const staff=sheetObjects_('staff').find(x=>x.staff_id===b.staff_id);if(!staff)throw Error('ไม่พบพนักงาน');
   const shift=shiftById_(b.shift_id||staff.shift_id);
   const branch=sheetObjects_('branches').find(x=>x.branch_id===staff.branch_id)||{},existing=sheetObjects_('timesheets'),skip=b.skip_dates||[];let created=0,skipped=0;
@@ -177,20 +181,21 @@ function countPaidLeaveDays_(rows,month){let dates=new Set();rows.filter(x=>x.le
 function nearestBranch_(lat,lng){if(!isFinite(lat)||!isFinite(lng))throw Error('ไม่พบข้อมูล GPS');let best=null,dist=Infinity;sheetObjects_('branches').filter(x=>x.status==='active'&&x.lat&&x.lng).forEach(x=>{const d=haversine_(lat,lng,Number(x.lat),Number(x.lng));if(d<=Number(x.allowed_radius_m||200)&&d<dist){best=x;dist=d}});if(!best)throw Error('อยู่นอกพื้นที่สาขา ไม่สามารถบันทึกเวลาได้');return best}
 function telegram_(text){try{const token=PropertiesService.getScriptProperties().getProperty('TELEGRAM_BOT_TOKEN'),chat=settings_().telegram_chat_id;if(!token||!chat)return;UrlFetchApp.fetch(`https://api.telegram.org/bot${token}/sendMessage`,{method:'post',contentType:'application/json',payload:JSON.stringify({chat_id:chat,text}),muteHttpExceptions:true})}catch(e){console.log(e)}}
 function settings_(){const out={};sheetObjects_('settings').forEach(x=>out[x.key]=String(x.value));return out}
-function shiftById_(id){const shifts=sheetObjects_('shifts'),shift=shifts.find(x=>x.shift_id===id)||shifts.find(x=>x.status==='active');if(!shift)throw Error('ยังไม่ได้ตั้งค่ากะงาน');return shift}
+function shiftById_(id){const shifts=sheetObjects_('shifts'),shift=shifts.find(x=>x.shift_id===id)||shifts.find(x=>x.status==='active');if(!shift)throw Error('ยังไม่ได้ตั้งค่ากะงาน');return{...shift,start_time:timeText_(shift.start_time),end_time:timeText_(shift.end_time)}}
 function shiftForStaff_(staff){return shiftById_(staff.shift_id)}
-function shiftForTimesheet_(row){if(row.shift_start&&row.shift_end)return{shift_id:row.shift_id||'',name:row.shift_name||'กะเดิม',start_time:row.shift_start,end_time:row.shift_end,late_grace_min:Number(row.late_grace_min||0),ot_grace_min:Number(row.ot_grace_min||0)};const settings=settings_();try{return shiftById_(row.shift_id)}catch(_){return{shift_id:'',name:'กะเดิม',start_time:settings.shift_start||'09:00',end_time:settings.shift_end||'18:00',late_grace_min:Number(settings.late_grace_min||0),ot_grace_min:Number(settings.ot_grace_min||0)}}}
+function shiftForTimesheet_(row){if(row.shift_start&&row.shift_end)return{shift_id:row.shift_id||'',name:row.shift_name||'กะเดิม',start_time:timeText_(row.shift_start),end_time:timeText_(row.shift_end),late_grace_min:Number(row.late_grace_min||0),ot_grace_min:Number(row.ot_grace_min||0)};const settings=settings_();try{return shiftById_(row.shift_id)}catch(_){return{shift_id:'',name:'กะเดิม',start_time:timeText_(settings.shift_start||'09:00'),end_time:timeText_(settings.shift_end||'18:00'),late_grace_min:Number(settings.late_grace_min||0),ot_grace_min:Number(settings.ot_grace_min||0)}}}
 function upsertSetting_(key,value){const rows=sheetObjects_('settings'),x=rows.find(r=>r.key===key);if(x)updateById_('settings','key',key,{value});else append_('settings',{key,value,description:''})}
 function ss_(){const id=PropertiesService.getScriptProperties().getProperty('SHEET_ID');return id?SpreadsheetApp.openById(id):SpreadsheetApp.getActiveSpreadsheet()}
 function sheet_(name){const s=ss_().getSheetByName(name);if(!s)throw Error('ไม่พบชีต '+name);return s}
 function ensureSheet_(name,headers){const ss=SpreadsheetApp.getActiveSpreadsheet();let s=ss.getSheetByName(name);if(!s)s=ss.insertSheet(name);if(s.getLastRow()===0){s.getRange(1,1,1,headers.length).setValues([headers]).setFontWeight('bold').setBackground('#dceff7')}else{const existing=s.getRange(1,1,1,s.getLastColumn()).getValues()[0];headers.filter(h=>!existing.includes(h)).forEach(h=>{const c=s.getLastColumn()+1;s.getRange(1,c).setValue(h).setFontWeight('bold').setBackground('#dceff7')})}s.setFrozenRows(1);return s}
+function formatTimeColumns_(name,columns){const s=sheet_(name),h=s.getRange(1,1,1,s.getLastColumn()).getValues()[0];columns.forEach(k=>{const c=h.indexOf(k);if(c>=0&&s.getMaxRows()>1)s.getRange(2,c+1,s.getMaxRows()-1,1).setNumberFormat('@')})}
 function sheetObjects_(name){const s=sheet_(name),values=s.getDataRange().getDisplayValues();if(values.length<2)return[];const h=values[0];return values.slice(1).filter(r=>r.some(Boolean)).map(r=>Object.fromEntries(h.map((k,i)=>[k,r[i]])))}
 function append_(name,obj){const s=sheet_(name),h=s.getRange(1,1,1,s.getLastColumn()).getValues()[0];s.appendRow(h.map(k=>obj[k]!==undefined?obj[k]:''))}
 function updateById_(name,idCol,id,updates){const s=sheet_(name),v=s.getDataRange().getValues(),h=v[0],idx=h.indexOf(idCol);for(let r=1;r<v.length;r++)if(String(v[r][idx])===String(id)){Object.entries(updates).forEach(([k,val])=>{const c=h.indexOf(k);if(c>=0)s.getRange(r+1,c+1).setValue(val)});return true}return false}
 function nextId_(name,col,prefix){const nums=sheetObjects_(name).map(x=>Number(String(x[col]).replace(/\D/g,''))||0);return prefix+String(Math.max(0,...nums)+1).padStart(3,'0')}
 function id_(p){return p+Utilities.formatDate(new Date(),TZ,'yyyyMMddHHmmss')+String(Math.floor(Math.random()*90+10))}
 function date_(d=new Date()){return Utilities.formatDate(d,TZ,'yyyy-MM-dd')}function time_(){return Utilities.formatDate(new Date(),TZ,'HH:mm')}function iso_(){return new Date().toISOString()}
-function minutes_(t){const [h,m]=String(t).split(':').map(Number);return h*60+m}function minutesOvernight_(start,end){let a=minutes_(start),b=minutes_(end);if(b<a)b+=1440;return b-a}function lateMinutes_(actual,start){let d=minutes_(actual)-minutes_(start);if(d<-720)d+=1440;return Math.max(0,d)}function hours_(a,b){return Number((minutesOvernight_(a,b)/60).toFixed(2))}function round_(n){return Math.round((Number(n)||0)*100)/100}
+function timeText_(t){const p=String(t||'').trim().split(':');return p.length===2?p[0].padStart(2,'0')+':'+p[1].padStart(2,'0'):String(t||'')}function validTime_(t){const m=timeText_(t).match(/^(\d{2}):(\d{2})$/);return !!m&&Number(m[1])<24&&Number(m[2])<60}function minutes_(t){const [h,m]=timeText_(t).split(':').map(Number);return h*60+m}function minutesOvernight_(start,end){let a=minutes_(start),b=minutes_(end);if(b<a)b+=1440;return b-a}function lateMinutes_(actual,start){let d=minutes_(actual)-minutes_(start);if(d<-720)d+=1440;return Math.max(0,d)}function hours_(a,b){return Number((minutesOvernight_(a,b)/60).toFixed(2))}function round_(n){return Math.round((Number(n)||0)*100)/100}
 function overtimeMinutes_(clockIn,shiftEnd,clockOut){const start=minutes_(clockIn);let end=minutes_(shiftEnd),out=minutes_(clockOut);if(end<=start)end+=1440;if(out<start)out+=1440;return Math.max(0,out-end)}
 function haversine_(a,b,c,d){const R=6371000,p=x=>x*Math.PI/180,da=p(c-a),db=p(d-b),q=Math.sin(da/2)**2+Math.cos(p(a))*Math.cos(p(c))*Math.sin(db/2)**2;return 2*R*Math.atan2(Math.sqrt(q),Math.sqrt(1-q))}
 function json_(obj){return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON)}
