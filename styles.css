@@ -114,6 +114,9 @@ body.is-loading { overflow: hidden; }
   table td { display: grid; grid-template-columns: minmax(92px,.8fr) minmax(0,1.25fr); gap: 12px; align-items: center; padding: 11px 12px; text-align: right; overflow-wrap: anywhere; }
   table td::before { content: attr(data-label); color: var(--muted); font-size: .86rem; font-weight: 500; text-align: left; }
   table td .btn { width: 100%; }
+  #attendance table tr { display: grid; grid-template-columns: minmax(88px,1.25fr) minmax(72px,1fr) 58px 58px; margin-bottom: 7px; }
+  #attendance table td { display: block; min-width: 0; padding: 8px 6px; border: 0; text-align: left; font-size: .86rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #attendance table td::before { display: block; margin-bottom: 2px; font-size: .66rem; line-height: 1; }
   .modal { width: 100%; max-height: 94dvh; padding: 18px 16px; border-radius: 20px; }
   .overlay { align-items: end; padding: 8px; }
   #dayChoices { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
