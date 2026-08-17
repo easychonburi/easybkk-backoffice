@@ -1,3 +1,2 @@
-// วาง URL ที่ได้จาก Deploy > New deployment > Web app ของ Apps Script ที่นี่
-window.EASY_BUBBLE_API_URL = 'PASTE_APPS_SCRIPT_WEB_APP_URL_HERE';
-
+// Apps Script Web App endpoint ของระบบ Easy - Bubble
+window.EASY_BUBBLE_API_URL = 'https://script.google.com/macros/s/AKfycbySEOAlnD9gP4VUwwukdud9BN6p0UUPG5pVANzHQeVythcmICtK6-qXBaJaj04vTrfADA/exec';
