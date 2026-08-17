@@ -67,6 +67,20 @@ tr:last-child td { border-bottom: 0; }
 .overlay { position: fixed; inset: 0; background: rgba(23,43,54,.35); display: none; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
 .overlay.show { display: flex; }
 .modal { width: min(620px,100%); max-height: 90vh; overflow: auto; background: #fff; border-radius: 22px; padding: 22px; box-shadow: 0 24px 70px rgba(24,55,73,.3); }
+.modal-wide { width: min(1020px,100%); }
+.payroll-row { cursor: pointer; }
+.payroll-row:hover { background: #f5fafc; }
+.bank-card { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 18px 0; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: #f2f9fc; }
+.account-number { margin-top: 3px; color: var(--navy); font-size: 1.25rem; font-weight: 700; letter-spacing: 1px; }
+.payroll-summary .notice { display: grid; gap: 4px; border-left-width: 3px; }
+.payroll-summary .notice b { color: var(--navy); font-size: 1.12rem; }
+.detail-title { margin-top: 24px; margin-bottom: 12px; }
+.payroll-times .inline-input { width: 100%; min-width: 82px; min-height: 42px; border: 1px solid var(--line); border-radius: 10px; padding: 7px 8px; background: #fff; color: var(--ink); }
+.payroll-times select.inline-input { margin-top: 6px; }
+.adjustment-card { margin-top: 20px; padding: 18px; border: 1px solid var(--line); border-radius: 18px; background: #f8fbfc; }
+.pay-total { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin: 8px 0 16px; padding: 15px; border-radius: 14px; color: var(--navy); background: #e7f4f9; }
+.pay-total b { font-size: 1.45rem; }
+.status-paid { margin-top: 10px; border-left-color: var(--success); background: #e5f5ef; color: #17644a; text-align: center; }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(30px); opacity: 0; pointer-events: none; background: #274b60; color: white; border-radius: 13px; padding: 12px 17px; z-index: 100; transition: .2s; max-width: calc(100% - 32px); text-align: center; }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .loader { width: 34px; height: 34px; border: 4px solid #dbeaf1; border-top-color: var(--blue); border-radius: 50%; animation: spin .8s linear infinite; margin: auto; }
@@ -118,6 +132,14 @@ body.is-loading { overflow: hidden; }
   #attendance table td { display: block; min-width: 0; padding: 8px 6px; border: 0; text-align: left; font-size: .86rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #attendance table td::before { display: block; margin-bottom: 2px; font-size: .66rem; line-height: 1; }
   .modal { width: 100%; max-height: 94dvh; padding: 18px 16px; border-radius: 20px; }
+  .modal-wide { max-height: 96dvh; }
+  .bank-card { align-items: stretch; flex-direction: column; }
+  .bank-card .btn { width: 100%; }
+  .payroll-summary { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
+  .payroll-summary .notice { padding: 11px; }
+  .payroll-times table td { grid-template-columns: 92px minmax(0,1fr); }
+  .adjustment-card { padding: 14px; }
+  .pay-total b { font-size: 1.25rem; }
   .overlay { align-items: end; padding: 8px; }
   #dayChoices { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
   #dayChoices .status { justify-content: flex-start; border-radius: 12px; }

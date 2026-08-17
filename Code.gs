@@ -3,13 +3,13 @@
  */
 const TZ = 'Asia/Bangkok';
 const SHEETS = {
-  staff: ['staff_id','name','nickname','pin','role','branch_id','daily_rate','ot_rate','status','created_at','shift_id'],
+  staff: ['staff_id','name','nickname','pin','role','branch_id','daily_rate','ot_rate','status','created_at','shift_id','bank_name','bank_account'],
   branches: ['branch_id','name','lat','lng','allowed_radius_m','status'],
   shifts: ['shift_id','name','start_time','end_time','late_grace_min','ot_grace_min','status','created_at'],
   timesheets: ['record_id','staff_id','staff_name','branch_id','branch_name','date','clock_in','clock_out','hours_worked','late_min','ot_hours','ot_status','note','clock_in_lat','clock_in_lng','clock_out_lat','clock_out_lng','created_at','shift_id','shift_name','shift_start','shift_end','late_grace_min','ot_grace_min'],
   leaves: ['leave_id','staff_id','date_from','date_to','leave_type','note','status','created_at'],
   advances: ['advance_id','staff_id','amount','date','note','status','deducted_month','created_at'],
-  payroll_runs: ['run_id','month','staff_id','staff_name','days_worked','paid_leave_days','base_pay','ot_pay','late_deduct','advance_deduct','manual_adjust','total_pay','status','paid_at'],
+  payroll_runs: ['run_id','month','staff_id','staff_name','days_worked','paid_leave_days','base_pay','ot_pay','late_deduct','advance_deduct','manual_adjust','total_pay','status','paid_at','extra_pay','other_deduct','adjustment_note'],
   settings: ['key','value','description']
 };
 
@@ -21,6 +21,7 @@ function setupSystem() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   PropertiesService.getScriptProperties().setProperty('SHEET_ID', ss.getId());
   Object.keys(SHEETS).forEach(name => ensureSheet_(name, SHEETS[name]));
+  formatTimeColumns_('staff',['pin','bank_account']);
   formatTimeColumns_('shifts',['start_time','end_time']);
   formatTimeColumns_('timesheets',['clock_in','clock_out','shift_start','shift_end']);
   const settings = sheetObjects_('settings');
@@ -63,7 +64,7 @@ function route_(b) {
     else {
       const user = session_(b.token);
       if (!user) throw Error('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
-      const adminOnly = ['adminData','saveStaff','saveBranch','saveShift','saveSettings','saveTelegram','bulkUpsertTimesheets','saveLeave','saveAdvance','approveOT','payrollPreview','finalizePayroll'];
+      const adminOnly = ['adminData','saveStaff','saveBranch','saveShift','saveSettings','saveTelegram','bulkUpsertTimesheets','saveLeave','saveAdvance','approveOT','payrollPreview','payrollDetail','updateTimesheet','finalizePayrollPerson','finalizePayroll'];
       if (adminOnly.includes(b.action) && user.role !== 'admin') throw Error('ไม่มีสิทธิ์ทำรายการนี้');
       switch (b.action) {
         case 'myDashboard': data = myDashboard_(user); break;
@@ -80,6 +81,9 @@ function route_(b) {
         case 'saveAdvance': data = saveAdvance_(b); break;
         case 'approveOT': data = approveOT_(b); break;
         case 'payrollPreview': data = payrollPreview_(b.month); break;
+        case 'payrollDetail': data = payrollDetail_(b); break;
+        case 'updateTimesheet': data = updateTimesheet_(b); break;
+        case 'finalizePayrollPerson': data = finalizePayrollPerson_(b); break;
         case 'finalizePayroll': data = finalizePayroll_(b); break;
         default: throw Error('ไม่พบคำสั่งที่ร้องขอ');
       }
@@ -133,7 +137,7 @@ function saveStaff_(b) {
   if(!/^\d{4}$/.test(String(b.pin||''))) throw Error('PIN ต้องเป็นตัวเลข 4 หลัก');
   const rows=sheetObjects_('staff'); if(rows.some(x=>String(x.pin)===String(b.pin)&&x.staff_id!==b.staff_id)) throw Error('PIN นี้มีคนใช้อยู่แล้ว');
   if(!sheetObjects_('shifts').some(x=>x.shift_id===b.shift_id))throw Error('กรุณาเลือกกะประจำ');
-  const data={name:b.name,nickname:b.nickname,pin:String(b.pin),role:b.role||'staff',branch_id:b.branch_id,daily_rate:Number(b.daily_rate||0),ot_rate:Number(b.ot_rate||0),status:b.status||'active',shift_id:b.shift_id};
+  const data={name:b.name,nickname:b.nickname,pin:String(b.pin),role:b.role||'staff',branch_id:b.branch_id,daily_rate:Number(b.daily_rate||0),ot_rate:Number(b.ot_rate||0),status:b.status||'active',shift_id:b.shift_id,bank_name:String(b.bank_name||'').trim(),bank_account:String(b.bank_account||'').replace(/\s+/g,'')};
   if(b.staff_id){updateById_('staff','staff_id',b.staff_id,data);return {staff_id:b.staff_id}}
   data.staff_id=nextId_('staff','staff_id','STF');data.created_at=iso_();append_('staff',data);return {staff_id:data.staff_id};
 }
@@ -170,12 +174,34 @@ function saveLeave_(b){if(!b.staff_id||!b.date_from||!b.date_to)throw Error('ก
 function saveAdvance_(b){if(!b.staff_id||Number(b.amount)<=0)throw Error('กรุณากรอกจำนวนเงิน');const id=id_('ADV');append_('advances',{advance_id:id,staff_id:b.staff_id,amount:Number(b.amount),date:date_(),note:b.note||'',status:'pending',deducted_month:'',created_at:iso_()});return {advance_id:id}}
 function approveOT_(b){if(!['approved','rejected'].includes(b.status))throw Error('สถานะไม่ถูกต้อง');if(!updateById_('timesheets','record_id',b.record_id,{ot_status:b.status}))throw Error('ไม่พบรายการ');return true}
 
-function payrollPreview_(month){
-  if(!/^\d{4}-\d{2}$/.test(month||''))throw Error('กรุณาเลือกเดือน');const settings=settings_();
-  const staff=sheetObjects_('staff').filter(x=>x.status==='active'&&x.role!=='admin'),times=sheetObjects_('timesheets').filter(x=>String(x.date).startsWith(month)),leaves=sheetObjects_('leaves'),adv=sheetObjects_('advances').filter(x=>x.status==='pending');
-  return staff.map(s=>{const t=times.filter(x=>x.staff_id===s.staff_id),days=new Set(t.filter(x=>x.clock_in).map(x=>x.date)).size,paidLeave=countPaidLeaveDays_(leaves.filter(x=>x.staff_id===s.staff_id&&x.status==='approved'),month),rate=Number(s.daily_rate||0),otHours=t.filter(x=>x.ot_status==='approved').reduce((a,x)=>a+Number(x.ot_hours||0),0),lateDeduct=settings.late_deduct_mode==='none'?0:t.reduce((a,x)=>{const sh=shiftForTimesheet_(x),late=Math.max(0,Number(x.late_min||0)-Number(sh.late_grace_min||0)),mins=Math.max(1,minutesOvernight_(sh.start_time,sh.end_time));return a+(rate/mins*late)},0),advance=adv.filter(x=>x.staff_id===s.staff_id).reduce((a,x)=>a+Number(x.amount||0),0),base=rate*(days+paidLeave),ot=otHours*Number(s.ot_rate||0);return{staff_id:s.staff_id,staff_name:s.nickname||s.name,days_worked:days,paid_leave_days:paidLeave,base_pay:round_(base),ot_pay:round_(ot),late_deduct:round_(lateDeduct),advance_deduct:round_(advance),manual_adjust:0,total_pay:round_(base+ot-lateDeduct-advance)}});
+function payrollItem_(staff,month,extraPay,otherDeduct,note){
+  if(!staff)throw Error('ไม่พบพนักงาน');const settings=settings_(),times=sheetObjects_('timesheets').filter(x=>x.staff_id===staff.staff_id&&String(x.date).startsWith(month)),leaves=sheetObjects_('leaves').filter(x=>x.staff_id===staff.staff_id&&x.status==='approved'),adv=sheetObjects_('advances').filter(x=>x.staff_id===staff.staff_id&&x.status==='pending');
+  const days=new Set(times.filter(x=>x.clock_in).map(x=>x.date)).size,paidLeave=countPaidLeaveDays_(leaves,month),rate=Number(staff.daily_rate||0),otHours=times.filter(x=>x.ot_status==='approved').reduce((a,x)=>a+Number(x.ot_hours||0),0),lateDeduct=settings.late_deduct_mode==='none'?0:times.reduce((a,x)=>{const sh=shiftForTimesheet_(x),late=Math.max(0,Number(x.late_min||0)-Number(sh.late_grace_min||0)),mins=Math.max(1,minutesOvernight_(sh.start_time,sh.end_time));return a+(rate/mins*late)},0),advance=adv.reduce((a,x)=>a+Number(x.amount||0),0),base=rate*(days+paidLeave),ot=otHours*Number(staff.ot_rate||0),extra=Math.max(0,Number(extraPay||0)),deduct=Math.max(0,Number(otherDeduct||0));
+  return{staff_id:staff.staff_id,staff_name:staff.nickname||staff.name,bank_name:staff.bank_name||'',bank_account:staff.bank_account||'',days_worked:days,paid_leave_days:paidLeave,base_pay:round_(base),ot_pay:round_(ot),late_deduct:round_(lateDeduct),advance_deduct:round_(advance),extra_pay:round_(extra),other_deduct:round_(deduct),adjustment_note:String(note||''),manual_adjust:round_(extra-deduct),total_pay:round_(base+ot-lateDeduct-advance+extra-deduct)};
 }
-function finalizePayroll_(b){const items=b.items||[];if(!items.length)throw Error('ไม่พบข้อมูลเงินเดือน');const existing=sheetObjects_('payroll_runs');items.forEach(x=>{if(existing.some(r=>r.month===b.month&&r.staff_id===x.staff_id))return;append_('payroll_runs',{run_id:id_('PR'),month:b.month,...x,status:'paid',paid_at:iso_()})});const sheet=sheet_('advances'),rows=sheetObjects_('advances');rows.filter(x=>x.status==='pending').forEach(x=>updateById_('advances','advance_id',x.advance_id,{status:'deducted',deducted_month:b.month}));telegram_(`💰 บันทึกจ่ายเงินเดือน Easy - Bubble รอบ ${b.month} แล้ว\nพนักงาน ${items.length} คน\nรวม ฿${items.reduce((a,x)=>a+Number(x.total_pay||0),0).toLocaleString('th-TH')}`);return true}
+function payrollPreview_(month){
+  if(!/^\d{4}-\d{2}$/.test(month||''))throw Error('กรุณาเลือกเดือน');const runs=sheetObjects_('payroll_runs').filter(x=>x.month===month&&x.status==='paid');
+  return sheetObjects_('staff').filter(x=>x.status==='active'&&x.role!=='admin').map(s=>{const paid=runs.find(x=>x.staff_id===s.staff_id),item=payrollItem_(s,month,paid?paid.extra_pay:0,paid?paid.other_deduct:0,paid?paid.adjustment_note:'');return paid?paidPayrollItem_(item,paid):{...item,paid:false,paid_at:''}});
+}
+function payrollDetail_(b){
+  if(!/^\d{4}-\d{2}$/.test(b.month||''))throw Error('กรุณาเลือกเดือน');const staff=sheetObjects_('staff').find(x=>x.staff_id===b.staff_id);if(!staff)throw Error('ไม่พบพนักงาน');
+  const paid=sheetObjects_('payroll_runs').find(x=>x.month===b.month&&x.staff_id===b.staff_id&&x.status==='paid'),item=payrollItem_(staff,b.month,paid?paid.extra_pay:0,paid?paid.other_deduct:0,paid?paid.adjustment_note:''),times=sheetObjects_('timesheets').filter(x=>x.staff_id===b.staff_id&&String(x.date).startsWith(b.month)).sort((a,z)=>String(a.date).localeCompare(String(z.date)));
+  return{item:paid?paidPayrollItem_(item,paid):{...item,paid:false,paid_at:''},timesheets:times};
+}
+function paidPayrollItem_(item,paid){const keys=['days_worked','paid_leave_days','base_pay','ot_pay','late_deduct','advance_deduct','extra_pay','other_deduct','manual_adjust','total_pay'],out={...item,...paid,bank_name:item.bank_name,bank_account:item.bank_account,paid:true};keys.forEach(k=>out[k]=Number(out[k]||0));return out}
+function updateTimesheet_(b){
+  const row=sheetObjects_('timesheets').find(x=>x.record_id===b.record_id);if(!row)throw Error('ไม่พบรายการเวลา');
+  if(sheetObjects_('payroll_runs').some(x=>x.month===String(row.date).slice(0,7)&&x.staff_id===row.staff_id&&x.status==='paid'))throw Error('จ่ายเงินเดือนรอบนี้แล้ว จึงแก้เวลาไม่ได้');
+  if(!validTime_(b.clock_in)||!validTime_(b.clock_out))throw Error('กรุณากรอกเวลาแบบ 24 ชั่วโมง เช่น 09:00');const clockIn=timeText_(b.clock_in),clockOut=timeText_(b.clock_out),shift=shiftForTimesheet_(row),otMin=overtimeMinutes_(clockIn,shift.end_time,clockOut),otHours=otMin>Number(shift.ot_grace_min||0)?Number((otMin/60).toFixed(2)):0;
+  let otStatus=otHours?(b.ot_status||'pending'):'none';if(!['pending','approved','rejected','none'].includes(otStatus))otStatus='pending';
+  updateById_('timesheets','record_id',row.record_id,{clock_in:clockIn,clock_out:clockOut,hours_worked:hours_(clockIn,clockOut),late_min:lateMinutes_(clockIn,shift.start_time),ot_hours:otHours,ot_status:otStatus,note:String(b.note||row.note||'')});return true;
+}
+function finalizePayrollPerson_(b){
+  if(!/^\d{4}-\d{2}$/.test(b.month||''))throw Error('กรุณาเลือกเดือน');if(sheetObjects_('payroll_runs').some(x=>x.month===b.month&&x.staff_id===b.staff_id&&x.status==='paid'))throw Error('พนักงานคนนี้ยืนยันจ่ายแล้ว');
+  const staff=sheetObjects_('staff').find(x=>x.staff_id===b.staff_id);const item=payrollItem_(staff,b.month,b.extra_pay,b.other_deduct,b.adjustment_note);append_('payroll_runs',{run_id:id_('PR'),month:b.month,...item,status:'paid',paid_at:iso_()});
+  sheetObjects_('advances').filter(x=>x.staff_id===b.staff_id&&x.status==='pending').forEach(x=>updateById_('advances','advance_id',x.advance_id,{status:'deducted',deducted_month:b.month}));telegram_(`💰 ยืนยันจ่ายเงินเดือน ${item.staff_name}\nรอบ ${b.month}\nยอดสุทธิ ฿${item.total_pay.toLocaleString('th-TH')}`);return item;
+}
+function finalizePayroll_(b){const items=b.items||[];if(!items.length)throw Error('ไม่พบข้อมูลเงินเดือน');items.forEach(x=>{if(!sheetObjects_('payroll_runs').some(r=>r.month===b.month&&r.staff_id===x.staff_id&&r.status==='paid'))finalizePayrollPerson_({month:b.month,staff_id:x.staff_id,extra_pay:x.extra_pay||0,other_deduct:x.other_deduct||0,adjustment_note:x.adjustment_note||''})});return true}
 
 function countPaidLeaveDays_(rows,month){let dates=new Set();rows.filter(x=>x.leave_type!=='unpaid').forEach(x=>dateRange_(x.date_from,x.date_to).forEach(ds=>{if(ds.startsWith(month))dates.add(ds)}));return dates.size}
 function nearestBranch_(lat,lng){if(!isFinite(lat)||!isFinite(lng))throw Error('ไม่พบข้อมูล GPS');let best=null,dist=Infinity;sheetObjects_('branches').filter(x=>x.status==='active'&&x.lat&&x.lng).forEach(x=>{const d=haversine_(lat,lng,Number(x.lat),Number(x.lng));if(d<=Number(x.allowed_radius_m||200)&&d<dist){best=x;dist=d}});if(!best)throw Error('อยู่นอกพื้นที่สาขา ไม่สามารถบันทึกเวลาได้');return best}
