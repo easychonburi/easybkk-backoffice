@@ -35,6 +35,7 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .big-number { font-size: 2.35rem; font-weight: 700; color: var(--navy); line-height: 1.15; }
 .btn { border: 0; border-radius: 14px; min-height: 52px; padding: 12px 18px; font-weight: 600; color: var(--navy); background: #e8f3f8; transition: transform .1s, filter .2s; }
 .btn:active { transform: scale(.98); }
+.clock-button:disabled { opacity: 1; color: #81929b; background: #dfe8ec; box-shadow: none; filter: grayscale(.35); }
 .btn-primary { color: #fff; background: linear-gradient(115deg, var(--blue), #6aabc9); }
 .btn-success { color: #fff; background: var(--success); }
 .btn-danger { color: #fff; background: var(--danger); }
@@ -62,6 +63,8 @@ tr:last-child td { border-bottom: 0; }
 .panel { display: none; }
 .panel.active { display: block; }
 .notice { border-left: 5px solid var(--blue); background: #eaf6fb; border-radius: 12px; padding: 13px 15px; color: #31566c; }
+.gps-ready { border-left-color: var(--success); background: #e4f5ee; color: #17644a; }
+.gps-blocked { border-left-color: var(--danger); background: #fceaea; color: #8f3e3e; }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .empty { text-align: center; padding: 35px 16px; color: var(--muted); }
 .overlay { position: fixed; inset: 0; background: rgba(23,43,54,.35); display: none; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
