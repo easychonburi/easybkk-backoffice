@@ -55,7 +55,19 @@ gcloud run deploy easy-bubble-api \
   --quiet
 
 echo "[6/6] Deploy Firestore Rules และหน้าเว็บ"
-"${FIREBASE[@]}" deploy --only firestore,hosting --project "$PROJECT_ID"
+DEPLOYED=false
+for ATTEMPT in 1 2 3 4 5; do
+  if "${FIREBASE[@]}" deploy --only firestore,hosting --project "$PROJECT_ID"; then
+    DEPLOYED=true
+    break
+  fi
+  echo "การเชื่อมต่อสะดุด รอ 5 วินาทีแล้วลองใหม่ (${ATTEMPT}/5)..."
+  sleep 5
+done
+if [[ "$DEPLOYED" != true ]]; then
+  echo "อัปโหลดไม่สำเร็จหลังลอง 5 ครั้ง กรุณารัน scripts/finish-deploy.sh"
+  exit 1
+fi
 
 while true; do
   read -r -s -p "ตั้ง PIN แอดมิน 4 หลัก (ใช้ PIN เดิมได้): " ADMIN_PIN
