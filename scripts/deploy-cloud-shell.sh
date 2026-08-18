@@ -22,16 +22,17 @@ echo "[3/6] ติดตั้ง Backend"
 npm --prefix functions ci --no-audit --no-fund
 
 echo "[4/6] สร้างกุญแจความปลอดภัย"
-APP_KEY_VALUE="$(openssl rand -hex 32)"
-BOOTSTRAP_KEY_VALUE="$(openssl rand -hex 32)"
 if gcloud secrets describe APP_ENCRYPTION_KEY --project "$PROJECT_ID" >/dev/null 2>&1; then
-  printf '%s' "$APP_KEY_VALUE" | gcloud secrets versions add APP_ENCRYPTION_KEY --data-file=- --project "$PROJECT_ID"
+  echo "ใช้ APP_ENCRYPTION_KEY เดิม เพื่อให้ PIN และ Telegram เดิมยังทำงาน"
 else
+  APP_KEY_VALUE="$(openssl rand -hex 32)"
   printf '%s' "$APP_KEY_VALUE" | gcloud secrets create APP_ENCRYPTION_KEY --replication-policy=automatic --data-file=- --project "$PROJECT_ID"
 fi
 if gcloud secrets describe BOOTSTRAP_KEY --project "$PROJECT_ID" >/dev/null 2>&1; then
-  printf '%s' "$BOOTSTRAP_KEY_VALUE" | gcloud secrets versions add BOOTSTRAP_KEY --data-file=- --project "$PROJECT_ID"
+  BOOTSTRAP_KEY_VALUE="$(gcloud secrets versions access latest --secret=BOOTSTRAP_KEY --project "$PROJECT_ID")"
+  echo "ใช้ BOOTSTRAP_KEY เดิม"
 else
+  BOOTSTRAP_KEY_VALUE="$(openssl rand -hex 32)"
   printf '%s' "$BOOTSTRAP_KEY_VALUE" | gcloud secrets create BOOTSTRAP_KEY --replication-policy=automatic --data-file=- --project "$PROJECT_ID"
 fi
 
