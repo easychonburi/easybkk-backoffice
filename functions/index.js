@@ -9,7 +9,7 @@ const db = getFirestore();
 const APP_KEY = {value: () => process.env.APP_ENCRYPTION_KEY || ""};
 const BOOTSTRAP_KEY = {value: () => process.env.BOOTSTRAP_KEY || ""};
 const SESSION_MS = 6 * 60 * 60 * 1000;
-const COLLECTIONS = ["staff", "branches", "shifts", "timesheets", "leaves", "advances", "payroll_runs", "payroll_drafts", "security_deposit_ledger", "advance_offers", "settings"];
+const COLLECTIONS = ["staff", "branches", "shifts", "timesheets", "leaves", "advances", "payroll_runs", "payroll_drafts", "security_deposit_ledger", "advance_offers", "settings", "audit_logs"];
 
 const text = (value) => String(value == null ? "" : value).trim();
 const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -93,6 +93,19 @@ function sanitizeAdjustments(value) {
 async function securityDepositBalance(staff) {
   const rows = await list("security_deposit_ledger");
   return round(number(staff?.security_deposit_opening_balance) + rows.filter((row) => row.staff_id === staff?.staff_id).reduce((sum, row) => sum + number(row.amount), 0));
+}
+const MUTATING_ACTIONS = new Set(["clockIn", "clockOut", "requestSundayAdvance", "saveStaff", "saveBranch", "saveShift", "saveSettings", "saveTelegram", "bulkUpsertTimesheets", "saveLeave", "saveAdvance", "approveOT", "savePayrollDraft", "updateTimesheet", "finalizePayrollPerson", "reopenPayrollPerson", "deleteAdminRecord", "importData"]);
+const ACTION_LABELS = {clockIn: "บันทึกเข้างาน", clockOut: "บันทึกออกงาน", requestSundayAdvance: "เลือกเบิกเงินวันอาทิตย์", saveStaff: "บันทึกพนักงาน", saveBranch: "บันทึกสาขา", saveShift: "บันทึกกะ", saveSettings: "บันทึกกฎ", saveTelegram: "ตั้งค่า Telegram", bulkUpsertTimesheets: "เพิ่มเวลาย้อนหลัง", saveLeave: "บันทึกวันลา", saveAdvance: "บันทึกเงินเบิก", approveOT: "ตรวจ OT", savePayrollDraft: "บันทึกร่างเงินเดือน", updateTimesheet: "แก้ไขเวลา", finalizePayrollPerson: "ยืนยันจ่ายเงินเดือน", reopenPayrollPerson: "ยกเลิกการยืนยันจ่าย", deleteAdminRecord: "ลบข้อมูล", importData: "นำเข้าข้อมูล"};
+async function writeAudit(user, action, body, result) {
+  try {
+    const auditId = id("AUD"), target = text(result?.record_id || result?.staff_id || result?.advance_id || result?.leave_id || result?.run_id || result?.shift_id || result?.branch_id || result?.id || body.staff_id || body.record_id || body.id), detailParts = [];
+    if (body.month) detailParts.push(`เดือน ${text(body.month)}`);
+    if (body.date_from) detailParts.push(`${text(body.date_from)} ถึง ${text(body.date_to || body.date_from)}`);
+    if (body.amount !== undefined) detailParts.push(`จำนวน ${number(body.amount).toLocaleString("th-TH")} บาท`);
+    if (body.status) detailParts.push(`สถานะ ${text(body.status)}`);
+    if (body.collection) detailParts.push(`ตาราง ${text(body.collection)}`);
+    await db.collection("audit_logs").doc(auditId).set({audit_id: auditId, action, action_label: ACTION_LABELS[action] || action, actor_id: user?.staff_id || "system", actor_name: user?.nickname || user?.name || "ระบบ", target_id: target, detail: detailParts.join(" · "), created_at: nowText()});
+  } catch (error) { console.error("Audit:", error); }
 }
 async function session(token) {
   if (!token) return null;
@@ -320,6 +333,45 @@ async function finalizePayrollPerson(body) {
   await telegram(`💰 ยืนยันจ่ายเงินเดือน ${item.staff_name}\nรอบ ${body.month}\nยอดสุทธิ ฿${item.total_pay.toLocaleString("th-TH")}${item.security_deposit_deduct ? `\n🔒 เงินประกันเพิ่ม ฿${item.security_deposit_deduct.toLocaleString("th-TH")}` : ""}`); return {...item, security_deposit_balance: round(item.security_deposit_balance + item.security_deposit_deduct), paid: true, paid_at: paidAt};
 }
 
+const DATA_COLLECTIONS = ["timesheets", "leaves", "advances", "payroll_runs", "security_deposit_ledger", "audit_logs"];
+const DATA_ID_FIELDS = {timesheets: "record_id", leaves: "leave_id", advances: "advance_id", payroll_runs: "run_id", security_deposit_ledger: "deposit_id", audit_logs: "audit_id"};
+async function adminDataBrowser(body) {
+  const category = DATA_COLLECTIONS.includes(body.category) ? body.category : "timesheets", collections = await Promise.all(DATA_COLLECTIONS.map((name) => list(name))), grouped = Object.fromEntries(DATA_COLLECTIONS.map((name, index) => [name, collections[index]])), rows = grouped[category].map((row) => {
+    const copy = {...row, doc_id: row._doc_id, data_id: row[DATA_ID_FIELDS[category]] || row._doc_id}; delete copy._doc_id;
+    if (category === "payroll_runs") delete copy.bank_account;
+    return copy;
+  });
+  rows.sort((a, b) => String(b.date || b.month || b.created_at || "").localeCompare(String(a.date || a.month || a.created_at || "")));
+  return {category, counts: Object.fromEntries(DATA_COLLECTIONS.map((name) => [name, grouped[name].length])), rows: rows.slice(0, 1000)};
+}
+async function reopenPayrollPerson(body) {
+  if (!/^\d{4}-\d{2}$/.test(body.month || "")) throw Error("กรุณาเลือกเดือน");
+  const [runs, deposits, advances, staff] = await Promise.all([list("payroll_runs"), list("security_deposit_ledger"), list("advances"), getById("staff", body.staff_id)]), matchedRuns = runs.filter((row) => row.month === body.month && row.staff_id === body.staff_id && row.status === "paid");
+  if (!matchedRuns.length) throw Error("ไม่พบเงินเดือนที่ยืนยันจ่ายแล้ว");
+  const matchedDeposits = deposits.filter((row) => row.month === body.month && row.staff_id === body.staff_id && row.source === "payroll"), matchedAdvances = advances.filter((row) => row.staff_id === body.staff_id && row.status === "deducted" && row.deducted_month === body.month), draftId = payrollDocId(body.month, body.staff_id), draftRef = db.collection("payroll_drafts").doc(draftId), refs = [...matchedRuns.map((row) => db.collection("payroll_runs").doc(row._doc_id)), ...matchedDeposits.map((row) => db.collection("security_deposit_ledger").doc(row._doc_id)), ...matchedAdvances.map((row) => db.collection("advances").doc(row._doc_id))], adjustments = legacyAdjustments(matchedRuns[0]);
+  await db.runTransaction(async (transaction) => {
+    const snapshots = await Promise.all(refs.map((ref) => transaction.get(ref))); let offset = 0;
+    matchedRuns.forEach((_, index) => { if (snapshots[offset + index].exists) transaction.delete(refs[offset + index]); }); offset += matchedRuns.length;
+    matchedDeposits.forEach((_, index) => { if (snapshots[offset + index].exists) transaction.delete(refs[offset + index]); }); offset += matchedDeposits.length;
+    matchedAdvances.forEach((_, index) => { if (snapshots[offset + index].exists) transaction.update(refs[offset + index], {status: "pending", deducted_month: ""}); });
+    transaction.set(draftRef, {draft_id: draftId, month: body.month, staff_id: body.staff_id, adjustments, status: "draft", updated_at: nowText()}, {merge: true});
+  });
+  const removedDeposit = round(matchedDeposits.reduce((sum, row) => sum + number(row.amount), 0));
+  await telegram(`↩️ ยกเลิกการยืนยันจ่าย ${staff?.nickname || staff?.name || body.staff_id}\nรอบ ${body.month}${removedDeposit ? `\n🔓 คืนยอดเงินประกัน ฿${removedDeposit.toLocaleString("th-TH")}` : ""}`);
+  return {staff_id: body.staff_id, staff_name: staff?.nickname || staff?.name || "", month: body.month, restored_advances: matchedAdvances.length, removed_deposit: removedDeposit};
+}
+async function deleteAdminRecord(body) {
+  const collection = text(body.collection), docId = text(body.doc_id);
+  if (!["timesheets", "leaves", "advances"].includes(collection) || !docId) throw Error("รายการนี้ไม่อนุญาตให้ลบโดยตรง");
+  const row = await getById(collection, docId); if (!row) throw Error("ไม่พบข้อมูลที่ต้องการลบ");
+  const runs = await list("payroll_runs");
+  if (collection === "timesheets" && runs.some((run) => run.staff_id === row.staff_id && run.month === String(row.date).slice(0, 7) && run.status === "paid")) throw Error("เดือนนี้ยืนยันจ่ายแล้ว กรุณายกเลิกการยืนยันจ่ายก่อน");
+  if (collection === "leaves") { const months = new Set(dateRange(row.date_from, row.date_to).map((date) => date.slice(0, 7))); if (runs.some((run) => run.staff_id === row.staff_id && months.has(run.month) && run.status === "paid")) throw Error("วันลานี้อยู่ในรอบที่จ่ายแล้ว กรุณายกเลิกการยืนยันจ่ายก่อน"); }
+  if (collection === "advances" && row.status !== "pending") throw Error("เงินเบิกรายการนี้หักไปแล้ว กรุณายกเลิกการยืนยันจ่ายก่อน");
+  await db.collection(collection).doc(docId).delete();
+  return {id: docId, collection, staff_id: row.staff_id || ""};
+}
+
 async function bootstrap(body) {
   if (!crypto.timingSafeEqual(Buffer.from(sha256(body.bootstrap_key || "")), Buffer.from(sha256(BOOTSTRAP_KEY.value())))) throw Error("รหัสเริ่มต้นไม่ถูกต้อง");
   if (!(await list("staff")).length) {
@@ -339,7 +391,7 @@ async function importData(body) {
   const payload = body.data || {}; let imported = 0;
   for (const name of COLLECTIONS) {
     for (const original of Array.isArray(payload[name]) ? payload[name] : []) {
-      const row = {...original}; let docId = row[({staff: "staff_id", branches: "branch_id", shifts: "shift_id", timesheets: "record_id", leaves: "leave_id", advances: "advance_id", payroll_runs: "run_id", payroll_drafts: "draft_id", security_deposit_ledger: "deposit_id", advance_offers: "offer_id", settings: "key"})[name]] || id(name.slice(0, 2).toUpperCase());
+      const row = {...original}; let docId = row[({staff: "staff_id", branches: "branch_id", shifts: "shift_id", timesheets: "record_id", leaves: "leave_id", advances: "advance_id", payroll_runs: "run_id", payroll_drafts: "draft_id", security_deposit_ledger: "deposit_id", advance_offers: "offer_id", settings: "key", audit_logs: "audit_id"})[name]] || id(name.slice(0, 2).toUpperCase());
       if (name === "staff" && row.pin) { row.pin_lookup = pinLookup(String(row.pin)); row.pin_hash = pinHash(String(row.pin)); delete row.pin; }
       Object.keys(row).forEach((key) => { if (row[key] === undefined) delete row[key]; });
       await db.collection(name).doc(String(docId)).set(row, {merge: true}); imported++;
@@ -348,35 +400,41 @@ async function importData(body) {
   return {imported};
 }
 
-const adminOnly = new Set(["adminData", "saveStaff", "saveBranch", "saveShift", "saveSettings", "saveTelegram", "bulkUpsertTimesheets", "saveLeave", "saveAdvance", "approveOT", "payrollPreview", "payrollDetail", "savePayrollDraft", "updateTimesheet", "finalizePayrollPerson", "importData"]);
+const adminOnly = new Set(["adminData", "adminDataBrowser", "saveStaff", "saveBranch", "saveShift", "saveSettings", "saveTelegram", "bulkUpsertTimesheets", "saveLeave", "saveAdvance", "approveOT", "payrollPreview", "payrollDetail", "savePayrollDraft", "updateTimesheet", "finalizePayrollPerson", "reopenPayrollPerson", "deleteAdminRecord", "importData"]);
 async function route(body) {
   if (body.action === "login") return login(body.pin);
   if (body.action === "bootstrap") return bootstrap(body);
   const user = await session(body.token); if (!user) throw Error("เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่");
   if (adminOnly.has(body.action) && user.role !== "admin") throw Error("ไม่มีสิทธิ์ทำรายการนี้");
+  let result;
   switch (body.action) {
-    case "myDashboard": return myDashboard(user);
-    case "clockIn": return clockIn(user, body);
-    case "clockOut": return clockOut(user, body);
-    case "requestSundayAdvance": return requestSundayAdvance(user, body);
-    case "adminData": return adminData();
-    case "saveStaff": return saveStaff(body);
-    case "saveBranch": return saveBranch(body);
-    case "saveShift": return saveShift(body);
-    case "saveSettings": for (const [key, value] of Object.entries(body.settings || {})) await saveSetting(key, value); return settings();
-    case "saveTelegram": return saveTelegram(body);
-    case "bulkUpsertTimesheets": return bulkUpsert(body);
-    case "saveLeave": return saveLeave(body);
-    case "saveAdvance": return saveAdvance(body);
-    case "approveOT": return approveOT(body);
-    case "payrollPreview": return payrollPreview(body.month);
-    case "payrollDetail": return payrollDetail(body);
-    case "savePayrollDraft": return savePayrollDraft(body);
-    case "updateTimesheet": return updateTimesheet(body);
-    case "finalizePayrollPerson": return finalizePayrollPerson(body);
-    case "importData": return importData(body);
+    case "myDashboard": result = await myDashboard(user); break;
+    case "clockIn": result = await clockIn(user, body); break;
+    case "clockOut": result = await clockOut(user, body); break;
+    case "requestSundayAdvance": result = await requestSundayAdvance(user, body); break;
+    case "adminData": result = await adminData(); break;
+    case "adminDataBrowser": result = await adminDataBrowser(body); break;
+    case "saveStaff": result = await saveStaff(body); break;
+    case "saveBranch": result = await saveBranch(body); break;
+    case "saveShift": result = await saveShift(body); break;
+    case "saveSettings": for (const [key, value] of Object.entries(body.settings || {})) await saveSetting(key, value); result = await settings(); break;
+    case "saveTelegram": result = await saveTelegram(body); break;
+    case "bulkUpsertTimesheets": result = await bulkUpsert(body); break;
+    case "saveLeave": result = await saveLeave(body); break;
+    case "saveAdvance": result = await saveAdvance(body); break;
+    case "approveOT": result = await approveOT(body); break;
+    case "payrollPreview": result = await payrollPreview(body.month); break;
+    case "payrollDetail": result = await payrollDetail(body); break;
+    case "savePayrollDraft": result = await savePayrollDraft(body); break;
+    case "updateTimesheet": result = await updateTimesheet(body); break;
+    case "finalizePayrollPerson": result = await finalizePayrollPerson(body); break;
+    case "reopenPayrollPerson": result = await reopenPayrollPerson(body); break;
+    case "deleteAdminRecord": result = await deleteAdminRecord(body); break;
+    case "importData": result = await importData(body); break;
     default: throw Error("ไม่พบคำสั่งที่ร้องขอ");
   }
+  if (MUTATING_ACTIONS.has(body.action)) await writeAudit(user, body.action, body, result);
+  return result;
 }
 
 exports.api = async (req, res) => {
