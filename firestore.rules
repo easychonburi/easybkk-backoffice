@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // หน้าเว็บไม่อ่านหรือเขียน Firestore โดยตรง ข้อมูลทั้งหมดต้องผ่าน
+    // Cloud Function ซึ่งตรวจ PIN, session และสิทธิ์ผู้ดูแลก่อนเสมอ
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

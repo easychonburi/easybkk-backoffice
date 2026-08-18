@@ -1,0 +1,6 @@
+.firebaserc
+.firebase/
+firebase-debug.log
+functions/node_modules/
+*.local
+easy-bubble-firebase-export.json
