@@ -1,8 +1,4 @@
 {
-  "functions": {
-    "source": "functions",
-    "runtime": "nodejs22"
-  },
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
@@ -21,8 +17,8 @@
     "rewrites": [
       {
         "source": "/api",
-        "function": {
-          "functionId": "api",
+        "run": {
+          "serviceId": "easy-bubble-api",
           "region": "asia-southeast3"
         }
       }

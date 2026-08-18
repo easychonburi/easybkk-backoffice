@@ -9,7 +9,7 @@ branch นี้เป็นระบบทดสอบคู่ขนาน ร
 ## สถาปัตยกรรม
 
 - Firebase Hosting: หน้าเว็บเดิมและ PWA
-- Cloud Functions v2 (Node.js 22): ตรวจ PIN, session, GPS, สิทธิ์ และคำนวณเงินเดือน
+- Cloud Run (Node.js 22, Bangkok): ตรวจ PIN, session, GPS, สิทธิ์ และคำนวณเงินเดือน
 - Cloud Firestore: พนักงาน สาขา กะ เวลา วันลา เงินเบิก และรอบเงินเดือน
 - Firestore Security Rules: ปิด direct client access ทุก collection
 - Telegram Bot Token: เข้ารหัสก่อนบันทึก และไม่อยู่ใน GitHub

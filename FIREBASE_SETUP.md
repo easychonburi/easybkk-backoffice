@@ -7,7 +7,7 @@
 1. ไปที่ [Firebase Console](https://console.firebase.google.com/) แล้วกด **Create a project**
 2. ตั้งชื่อ เช่น `easy-bubble-backoffice` และปิด Google Analytics ได้
 3. Project ID ของระบบนี้คือ `easy-bubble-backoffice`
-4. เปิด Billing และเลือกแผน Blaze เพื่อให้ใช้ Cloud Functions ได้ ค่าใช้จ่ายจริงยังอยู่ภายใต้โควตาฟรีตามการใช้งาน
+4. เปิด Billing และเลือกแผน Blaze เพื่อให้ใช้ Cloud Run ได้ ค่าใช้จ่ายจริงยังอยู่ภายใต้โควตาฟรีตามการใช้งาน
 5. ตอนสร้าง Firestore ให้เลือก location `asia-southeast3 (Bangkok)` เพื่อให้ฐานข้อมูลและ backend อยู่ใกล้ผู้ใช้ในไทย
 
 ## ขั้น deploy

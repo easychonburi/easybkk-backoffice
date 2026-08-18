@@ -1,20 +1,15 @@
 "use strict";
 
 const crypto = require("node:crypto");
-const {onRequest} = require("firebase-functions/v2/https");
-const {defineSecret} = require("firebase-functions/params");
-const {setGlobalOptions} = require("firebase-functions/v2/options");
 const {initializeApp} = require("firebase-admin/app");
 const {getFirestore, FieldValue} = require("firebase-admin/firestore");
 
 initializeApp();
 const db = getFirestore();
-const APP_KEY = defineSecret("APP_ENCRYPTION_KEY");
-const BOOTSTRAP_KEY = defineSecret("BOOTSTRAP_KEY");
+const APP_KEY = {value: () => process.env.APP_ENCRYPTION_KEY || ""};
+const BOOTSTRAP_KEY = {value: () => process.env.BOOTSTRAP_KEY || ""};
 const SESSION_MS = 6 * 60 * 60 * 1000;
 const COLLECTIONS = ["staff", "branches", "shifts", "timesheets", "leaves", "advances", "payroll_runs", "settings"];
-
-setGlobalOptions({region: "asia-southeast3", maxInstances: 5, memory: "256MiB", timeoutSeconds: 60});
 
 const text = (value) => String(value == null ? "" : value).trim();
 const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -319,10 +314,12 @@ async function route(body) {
   }
 }
 
-exports.api = onRequest({secrets: [APP_KEY, BOOTSTRAP_KEY], cors: true, invoker: "public"}, async (req, res) => {
+exports.api = async (req, res) => {
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Headers", "content-type");
   res.set("Cache-Control", "no-store");
   if (req.method === "OPTIONS") return res.status(204).send("");
   if (req.method !== "POST") return res.status(405).json({success: false, message: "Method not allowed"});
   try { return res.json({success: true, data: await route(req.body || {})}); }
   catch (error) { console.error(error); return res.status(200).json({success: false, message: error.message || "เกิดข้อผิดพลาด"}); }
-});
+};
