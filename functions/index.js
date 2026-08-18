@@ -14,7 +14,7 @@ const BOOTSTRAP_KEY = defineSecret("BOOTSTRAP_KEY");
 const SESSION_MS = 6 * 60 * 60 * 1000;
 const COLLECTIONS = ["staff", "branches", "shifts", "timesheets", "leaves", "advances", "payroll_runs", "settings"];
 
-setGlobalOptions({region: "asia-southeast1", maxInstances: 5, memory: "256MiB", timeoutSeconds: 60});
+setGlobalOptions({region: "asia-southeast3", maxInstances: 5, memory: "256MiB", timeoutSeconds: 60});
 
 const text = (value) => String(value == null ? "" : value).trim();
 const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;

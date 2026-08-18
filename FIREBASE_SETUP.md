@@ -8,7 +8,7 @@
 2. ตั้งชื่อ เช่น `easy-bubble-backoffice` และปิด Google Analytics ได้
 3. Project ID ของระบบนี้คือ `easy-bubble-backoffice`
 4. เปิด Billing และเลือกแผน Blaze เพื่อให้ใช้ Cloud Functions ได้ ค่าใช้จ่ายจริงยังอยู่ภายใต้โควตาฟรีตามการใช้งาน
-5. ตอนสร้าง Firestore ให้เลือก location `asia-southeast1 (Singapore)` ถ้ามีตัวเลือกนี้ และห้ามสร้างคนละ location ก่อนจีนี่ตรวจ
+5. ตอนสร้าง Firestore ให้เลือก location `asia-southeast3 (Bangkok)` เพื่อให้ฐานข้อมูลและ backend อยู่ใกล้ผู้ใช้ในไทย
 
 ## ขั้น deploy
 
