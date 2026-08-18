@@ -3,8 +3,8 @@ import {readFile} from "node:fs/promises";
 const [apiUrl, jsonPath] = process.argv.slice(2);
 const adminPin = process.env.ADMIN_PIN;
 const bootstrapKey = process.env.BOOTSTRAP_KEY;
-if (!apiUrl || !jsonPath || !/^\d{4}$/.test(adminPin || "") || !bootstrapKey) {
-  console.error("Usage: ADMIN_PIN=1234 BOOTSTRAP_KEY=... node migration/import.mjs https://SITE.web.app/api ./easy-bubble-firebase-export.json");
+if (!apiUrl || !jsonPath || !/^\d{4}$/.test(adminPin || "")) {
+  console.error("Usage: ADMIN_PIN=1234 node migration/import.mjs https://SITE.web.app/api ./easy-bubble-firebase-export.json");
   process.exit(1);
 }
 async function call(body) {
@@ -14,7 +14,13 @@ async function call(body) {
   return result.data;
 }
 const data = JSON.parse(await readFile(jsonPath, "utf8"));
-await call({action: "bootstrap", bootstrap_key: bootstrapKey, admin_pin: adminPin});
-const session = await call({action: "login", pin: adminPin});
+let session;
+try {
+  session = await call({action: "login", pin: adminPin});
+} catch (error) {
+  if (!bootstrapKey) throw error;
+  await call({action: "bootstrap", bootstrap_key: bootstrapKey, admin_pin: adminPin});
+  session = await call({action: "login", pin: adminPin});
+}
 const result = await call({action: "importData", token: session.token, data});
 console.log(`Imported ${result.imported} rows successfully.`);

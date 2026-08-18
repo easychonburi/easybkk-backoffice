@@ -14,6 +14,8 @@
 
 ต้องใช้ Node.js 22 และ Firebase CLI:
 
+วิธีง่ายที่สุดคือเปิด Google Cloud Shell แล้วรันสคริปต์ `scripts/deploy-cloud-shell.sh` ซึ่งจะสร้างกุญแจแบบสุ่มและถาม PIN ในหน้าจอ Cloud Shell โดยตรง
+
 ```bash
 npm install -g firebase-tools
 firebase login

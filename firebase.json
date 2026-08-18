@@ -15,6 +15,7 @@
       "**/node_modules/**",
       "functions/**",
       "migration/**",
+      "scripts/**",
       "legacy/**"
     ],
     "rewrites": [
