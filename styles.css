@@ -123,6 +123,8 @@ tr:last-child td { border-bottom: 0; }
 .data-details div { display: grid; grid-template-columns: minmax(110px,.7fr) minmax(160px,1.3fr); gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: .82rem; }
 .data-details div span { color: var(--muted); }
 .data-details div b { overflow-wrap: anywhere; font-weight: 400; }
+.data-pagination { align-items: center; justify-content: center; margin-top: 14px; }
+.data-pagination span { color: var(--muted); }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(30px); opacity: 0; pointer-events: none; background: #274b60; color: white; border-radius: 13px; padding: 12px 17px; z-index: 100; transition: .2s; max-width: calc(100% - 32px); text-align: center; }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .loader { width: 34px; height: 34px; border: 4px solid #dbeaf1; border-top-color: var(--blue); border-radius: 50%; animation: spin .8s linear infinite; margin: auto; }
