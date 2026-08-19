@@ -135,8 +135,8 @@ async function securityDepositBalance(staff) {
   const snap = await db.collection("security_deposit_ledger").where("staff_id", "==", staff?.staff_id).aggregate({total: AggregateField.sum("amount")}).get();
   return round(number(staff?.security_deposit_opening_balance) + number(snap.data().total));
 }
-const MUTATING_ACTIONS = new Set(["clockIn", "clockOut", "requestSundayAdvance", "saveStaff", "saveBranch", "saveShift", "saveSettings", "saveTelegram", "bulkUpsertTimesheets", "saveLeave", "saveAdvance", "approveOT", "savePayrollDraft", "updateTimesheet", "finalizePayrollPerson", "reopenPayrollPerson", "deleteAdminRecord", "importData"]);
-const ACTION_LABELS = {clockIn: "บันทึกเข้างาน", clockOut: "บันทึกออกงาน", requestSundayAdvance: "เลือกเบิกเงินวันอาทิตย์", saveStaff: "บันทึกพนักงาน", saveBranch: "บันทึกสาขา", saveShift: "บันทึกกะ", saveSettings: "บันทึกกฎ", saveTelegram: "ตั้งค่า Telegram", bulkUpsertTimesheets: "เพิ่มเวลาย้อนหลัง", saveLeave: "บันทึกวันลา", saveAdvance: "บันทึกเงินเบิก", approveOT: "ตรวจ OT", savePayrollDraft: "บันทึกร่างเงินเดือน", updateTimesheet: "แก้ไขเวลา", finalizePayrollPerson: "ยืนยันจ่ายเงินเดือน", reopenPayrollPerson: "ยกเลิกการยืนยันจ่าย", deleteAdminRecord: "ลบข้อมูล", importData: "นำเข้าข้อมูล"};
+const MUTATING_ACTIONS = new Set(["clockIn", "clockOut", "requestSundayAdvance", "saveStaff", "saveBranch", "saveShift", "saveSettings", "saveTelegram", "bulkUpsertTimesheets", "saveLeave", "saveAdvance", "approveOT", "savePayrollDraft", "updateTimesheet", "updateTimesheets", "finalizePayrollPerson", "reopenPayrollPerson", "deleteAdminRecord", "importData"]);
+const ACTION_LABELS = {clockIn: "บันทึกเข้างาน", clockOut: "บันทึกออกงาน", requestSundayAdvance: "เลือกเบิกเงินวันอาทิตย์", saveStaff: "บันทึกพนักงาน", saveBranch: "บันทึกสาขา", saveShift: "บันทึกกะ", saveSettings: "บันทึกกฎ", saveTelegram: "ตั้งค่า Telegram", bulkUpsertTimesheets: "เพิ่มเวลาย้อนหลัง", saveLeave: "บันทึกวันลา", saveAdvance: "บันทึกเงินเบิก", approveOT: "ตรวจ OT", savePayrollDraft: "บันทึกร่างเงินเดือน", updateTimesheet: "แก้ไขเวลา", updateTimesheets: "แก้ไขเวลาหลายวัน", finalizePayrollPerson: "ยืนยันจ่ายเงินเดือน", reopenPayrollPerson: "ยกเลิกการยืนยันจ่าย", deleteAdminRecord: "ลบข้อมูล", importData: "นำเข้าข้อมูล"};
 async function writeAudit(user, action, body, result) {
   try {
     const auditId = id("AUD"), target = text(result?.record_id || result?.staff_id || result?.advance_id || result?.leave_id || result?.run_id || result?.shift_id || result?.branch_id || result?.id || body.staff_id || body.record_id || body.id), detailParts = [];
@@ -378,6 +378,19 @@ async function updateTimesheet(body) {
   const clockIn = timeText(body.clock_in), clockOut = timeText(body.clock_out), shift = await shiftForTimesheet(row); let status = body.ot_status || row.ot_status || "none", otHours = status === "none" ? 0 : eligibleOtHours(earlyMinutes(clockIn, shift.start_time) + overtimeMinutes(clockIn, shift.end_time, clockOut)); if (!["pending", "approved", "rejected", "none"].includes(status)) status = "pending"; if (!otHours) status = "none";
   await db.collection("timesheets").doc(row.record_id).update({clock_in: clockIn, clock_out: clockOut, hours_worked: hours(clockIn, clockOut), late_min: lateMinutes(clockIn, shift.start_time), ot_hours: otHours, ot_status: status, note: text(body.note || row.note), updated_at: nowText()}); return true;
 }
+async function updateTimesheets(body) {
+  const updates = Array.isArray(body.updates) ? body.updates : [];
+  if (!updates.length) throw Error("ไม่มีเวลาที่แก้ไข");
+  if (updates.length > 62) throw Error("แก้ไขได้ครั้งละไม่เกิน 62 วัน");
+  const ids = new Set();
+  for (const row of updates) {
+    if (!text(row.record_id) || ids.has(text(row.record_id))) throw Error("รายการเวลาไม่ถูกต้อง");
+    if (!validTime(row.clock_in) || !validTime(row.clock_out)) throw Error("กรุณากรอกเวลาแบบ 24 ชั่วโมง เช่น 09:00");
+    ids.add(text(row.record_id));
+  }
+  for (const row of updates) await updateTimesheet(row);
+  return {updated: updates.length};
+}
 async function finalizePayrollPerson(body) {
   if (!/^\d{4}-\d{2}$/.test(body.month || "")) throw Error("กรุณาเลือกเดือน");
   if ((await payrollRun(body.month, body.staff_id))?.status === "paid") throw Error("พนักงานคนนี้ยืนยันจ่ายแล้ว");
@@ -462,7 +475,7 @@ async function importData(body) {
   return {imported};
 }
 
-const adminOnly = new Set(["adminData", "adminDataBrowser", "saveStaff", "saveBranch", "saveShift", "saveSettings", "saveTelegram", "bulkUpsertTimesheets", "saveLeave", "saveAdvance", "approveOT", "payrollPreview", "payrollDetail", "savePayrollDraft", "updateTimesheet", "finalizePayrollPerson", "reopenPayrollPerson", "deleteAdminRecord", "importData"]);
+const adminOnly = new Set(["adminData", "adminDataBrowser", "saveStaff", "saveBranch", "saveShift", "saveSettings", "saveTelegram", "bulkUpsertTimesheets", "saveLeave", "saveAdvance", "approveOT", "payrollPreview", "payrollDetail", "savePayrollDraft", "updateTimesheet", "updateTimesheets", "finalizePayrollPerson", "reopenPayrollPerson", "deleteAdminRecord", "importData"]);
 async function route(body) {
   if (body.action === "login") return login(body.pin);
   if (body.action === "bootstrap") return bootstrap(body);
@@ -489,6 +502,7 @@ async function route(body) {
     case "payrollDetail": result = await payrollDetail(body); break;
     case "savePayrollDraft": result = await savePayrollDraft(body); break;
     case "updateTimesheet": result = await updateTimesheet(body); break;
+    case "updateTimesheets": result = await updateTimesheets(body); break;
     case "finalizePayrollPerson": result = await finalizePayrollPerson(body); break;
     case "reopenPayrollPerson": result = await reopenPayrollPerson(body); break;
     case "deleteAdminRecord": result = await deleteAdminRecord(body); break;
