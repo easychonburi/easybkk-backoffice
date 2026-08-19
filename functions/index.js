@@ -342,7 +342,7 @@ async function payrollContext(month, staffId = "") {
 }
 function payrollItemFromContext(staff, month, adjustmentRows = [], context) {
   if (!staff) throw Error("ไม่พบพนักงาน");
-  const adjustments = sanitizeAdjustments(adjustmentRows), times = context.timesheets.filter((row) => row.staff_id === staff.staff_id), days = new Set(times.filter((row) => row.clock_in).map((row) => row.date)).size, paidLeave = countPaidLeaveDays(staff.staff_id, month, context.leaves), doubleLeaveDays = countDoubleDeductLeaveDays(staff.staff_id, month, context.leaves), rate = number(staff.daily_rate), otRate = number(staff.ot_rate), otHours = times.filter((row) => row.ot_status === "approved").reduce((sum, row) => sum + number(row.ot_hours), 0); let lateDeduct = 0;
+  const adjustments = sanitizeAdjustments(adjustmentRows), times = context.timesheets.filter((row) => row.staff_id === staff.staff_id), days = new Set(times.filter((row) => row.clock_in).map((row) => row.date)).size, paidLeave = countPaidLeaveDays(staff.staff_id, month, context.leaves), doubleLeaveDays = countDoubleDeductLeaveDays(staff.staff_id, month, context.leaves), rate = number(staff.daily_rate), otRate = number(staff.ot_rate), otHours = times.filter((row) => row.ot_status === "approved").reduce((sum, row) => sum + eligibleOtHours(number(row.ot_hours) * 60), 0); let lateDeduct = 0;
   if (context.config.late_deduct_mode !== "none") for (const row of times) {
     lateDeduct += Math.max(0, number(row.late_min));
   }
@@ -368,7 +368,7 @@ async function payrollPreview(month) {
 }
 async function payrollDetail(body) {
   if (!/^\d{4}-\d{2}$/.test(body.month || "")) throw Error("กรุณาเลือกเดือน"); const staff = await getById("staff", body.staff_id); if (!staff) throw Error("ไม่พบพนักงาน");
-  const [paid, draft, context] = await Promise.all([payrollRun(body.month, body.staff_id), getById("payroll_drafts", payrollDocId(body.month, body.staff_id)), payrollContext(body.month, body.staff_id)]), adjustments = paid ? legacyAdjustments(paid) : legacyAdjustments(draft), item = payrollItemFromContext(staff, body.month, adjustments, context), timesheets = context.timesheets.sort((a, b) => String(a.date).localeCompare(String(b.date))), depositHistory = context.deposits.sort((a, b) => String(b.month).localeCompare(String(a.month)));
+  const [paid, draft, context] = await Promise.all([payrollRun(body.month, body.staff_id), getById("payroll_drafts", payrollDocId(body.month, body.staff_id)), payrollContext(body.month, body.staff_id)]), adjustments = paid ? legacyAdjustments(paid) : legacyAdjustments(draft), item = payrollItemFromContext(staff, body.month, adjustments, context), timesheets = context.timesheets.sort((a, b) => String(a.date).localeCompare(String(b.date))).map((row) => ({...row, ot_hours: eligibleOtHours(number(row.ot_hours) * 60)})), depositHistory = context.deposits.sort((a, b) => String(b.month).localeCompare(String(a.month)));
   return {item: paid ? paidPayrollItem(item, paid) : {...item, paid: false, paid_at: ""}, timesheets, deposit_history: depositHistory};
 }
 async function updateTimesheet(body) {
