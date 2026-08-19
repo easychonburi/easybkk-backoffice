@@ -71,6 +71,16 @@ async function getById(name, value) {
   const snap = await db.collection(name).doc(String(value)).get();
   return snap.exists ? {...snap.data(), _doc_id: snap.id} : null;
 }
+async function timesheetForDate(staffId, date) {
+  const snap = await db.collection("timesheets").where("staff_id", "==", String(staffId)).where("date", "==", String(date)).limit(1).get();
+  if (snap.empty) return null;
+  const doc = snap.docs[0];
+  return {...doc.data(), _doc_id: doc.id};
+}
+async function latestTimesheets(staffId, count = 3) {
+  const snap = await db.collection("timesheets").where("staff_id", "==", String(staffId)).orderBy("date", "desc").limit(count).get();
+  return snap.docs.map((doc) => ({...doc.data(), _doc_id: doc.id}));
+}
 async function settings() {
   const rows = await list("settings");
   return Object.fromEntries(rows.map((row) => [row.key || row._doc_id, String(row.value ?? "")]));
@@ -169,8 +179,8 @@ async function testTelegram(token, chat) {
 }
 
 async function clockIn(user, body) {
-  const rows = await list("timesheets"), date = today();
-  if (rows.some((row) => row.staff_id === user.staff_id && row.date === date && row.clock_in)) throw Error("วันนี้บันทึกเข้างานแล้ว");
+  const date = today(), existing = await timesheetForDate(user.staff_id, date);
+  if (existing?.clock_in) throw Error("วันนี้บันทึกเข้างานแล้ว");
   const staff = await getById("staff", user.staff_id), branch = await nearestBranch(body.lat, body.lng), shift = await shiftById(staff.shift_id), clock = nowTime(), late = lateMinutes(clock, shift.start_time);
   const record = {record_id: id("TS"), staff_id: user.staff_id, staff_name: staff.nickname || staff.name, branch_id: branch.branch_id, branch_name: branch.name, date, clock_in: clock, clock_out: "", hours_worked: "", late_min: late, ot_hours: 0, ot_status: "none", note: "", clock_in_lat: number(body.lat), clock_in_lng: number(body.lng), clock_out_lat: "", clock_out_lng: "", created_at: nowText(), shift_id: shift.shift_id, shift_name: shift.name, shift_start: shift.start_time, shift_end: shift.end_time, late_grace_min: number(shift.late_grace_min), ot_grace_min: number(shift.ot_grace_min)};
   await db.collection("timesheets").doc(record.record_id).set(record);
@@ -179,8 +189,8 @@ async function clockIn(user, body) {
   return {...record, offer_advance: user.role !== "admin" && bangkokWeekday() === "Sun" && !offer.exists};
 }
 async function clockOut(user, body) {
-  const rows = await list("timesheets");
-  const row = rows.find((item) => item.staff_id === user.staff_id && !item.clock_out && (item.date === today() || item.date === yesterday()));
+  const todayRow = await timesheetForDate(user.staff_id, today()), yesterdayRow = todayRow?.clock_out === "" ? null : await timesheetForDate(user.staff_id, yesterday());
+  const row = [todayRow, yesterdayRow].find((item) => item?.clock_in && !item.clock_out);
   if (!row) throw Error("ไม่พบรายการเข้างานที่ยังไม่ได้ออก");
   const branch = await nearestBranch(body.lat, body.lng), clock = nowTime(), shift = await shiftForTimesheet(row), worked = hours(row.clock_in, clock), otMinutes = overtimeMinutes(row.clock_in, shift.end_time, clock), otHours = otMinutes > number(shift.ot_grace_min) ? round(otMinutes / 60) : 0;
   await db.collection("timesheets").doc(row.record_id).update({clock_out: clock, hours_worked: worked, ot_hours: otHours, ot_status: otHours ? "pending" : "none", clock_out_lat: number(body.lat), clock_out_lng: number(body.lng), updated_at: nowText()});
@@ -188,9 +198,9 @@ async function clockOut(user, body) {
   return {clock_out: clock, hours_worked: worked, ot_hours: otHours};
 }
 async function myDashboard(user) {
-  const staff = await getById("staff", user.staff_id), branches = await list("branches"), rows = (await list("timesheets")).filter((row) => row.staff_id === user.staff_id).sort((a, b) => String(b.date).localeCompare(String(a.date))), branch = branches.find((row) => row.branch_id === staff.branch_id);
+  const [staff, branches, rows] = await Promise.all([getById("staff", user.staff_id), list("branches"), latestTimesheets(user.staff_id, 3)]), branch = branches.find((row) => row.branch_id === staff.branch_id);
   const todayRow = rows.find((row) => row.date === today()) || null, offer = await db.collection("advance_offers").doc(`${today()}_${user.staff_id}`).get();
-  return {today: todayRow, history: rows.slice(0, 7), offer_advance: user.role !== "admin" && bangkokWeekday() === "Sun" && Boolean(todayRow?.clock_in) && !offer.exists, shift: await shiftById(staff.shift_id), profile: {staff_id: staff.staff_id, name: staff.name || "", nickname: staff.nickname || "", branch_id: staff.branch_id, branch_name: branch?.name || ""}, branches: branches.filter((row) => row.status === "active" && row.lat !== "" && row.lng !== "").map((row) => ({branch_id: row.branch_id, name: row.name, lat: number(row.lat), lng: number(row.lng), allowed_radius_m: number(row.allowed_radius_m, 200)}))};
+  return {today: todayRow, history: rows, offer_advance: user.role !== "admin" && bangkokWeekday() === "Sun" && Boolean(todayRow?.clock_in) && !offer.exists, shift: await shiftById(staff.shift_id), profile: {staff_id: staff.staff_id, name: staff.name || "", nickname: staff.nickname || "", branch_id: staff.branch_id, branch_name: branch?.name || ""}, branches: branches.filter((row) => row.status === "active" && row.lat !== "" && row.lng !== "").map((row) => ({branch_id: row.branch_id, name: row.name, lat: number(row.lat), lng: number(row.lng), allowed_radius_m: number(row.allowed_radius_m, 200)}))};
 }
 
 async function requestSundayAdvance(user, body) {
@@ -198,8 +208,8 @@ async function requestSundayAdvance(user, body) {
   const amount = number(body.amount);
   if (![0, 500, 1000].includes(amount)) throw Error("เลือกยอดเบิก 500 หรือ 1,000 บาท");
   if (bangkokWeekday() !== "Sun") throw Error("เบิกผ่านหน้านี้ได้เฉพาะวันอาทิตย์");
-  const date = today(), times = await list("timesheets");
-  if (!times.some((row) => row.staff_id === user.staff_id && row.date === date && row.clock_in)) throw Error("กรุณาบันทึกเข้างานก่อนเลือกเบิกเงิน");
+  const date = today(), timesheet = await timesheetForDate(user.staff_id, date);
+  if (!timesheet?.clock_in) throw Error("กรุณาบันทึกเข้างานก่อนเลือกเบิกเงิน");
   const offerRef = db.collection("advance_offers").doc(`${date}_${user.staff_id}`), advanceRef = db.collection("advances").doc(`ADV_${date}_${user.staff_id}`), staff = await getById("staff", user.staff_id);
   const result = await db.runTransaction(async (transaction) => {
     const [offerSnap, advanceSnap] = await Promise.all([transaction.get(offerRef), transaction.get(advanceRef)]);
