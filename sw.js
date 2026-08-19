@@ -1,4 +1,4 @@
-const CACHE_NAME='easy-bubble-pwa-firebase-v8';
+const CACHE_NAME='easy-bubble-pwa-firebase-v9';
 const APP_SHELL=['./','./index.html','./clock.html','./admin.html','./styles.css','./config.js','./admin.js','./pwa.js','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png'];
 
 self.addEventListener('install',event=>{
