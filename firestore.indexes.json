@@ -32,6 +32,14 @@
         {"fieldPath": "status", "order": "ASCENDING"},
         {"fieldPath": "deducted_month", "order": "ASCENDING"}
       ]
+    },
+    {
+      "collectionGroup": "security_deposit_ledger",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "staff_id", "order": "ASCENDING"},
+        {"fieldPath": "amount", "order": "ASCENDING"}
+      ]
     }
   ],
   "fieldOverrides": []
