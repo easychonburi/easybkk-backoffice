@@ -11,10 +11,22 @@ else
   FIREBASE=(npx --yes firebase-tools@latest)
 fi
 
-echo "[1/3] ติดตั้ง Backend เวอร์ชันล่าสุด"
+echo "[1/4] ติดตั้ง Backend เวอร์ชันล่าสุด"
 npm --prefix functions ci --no-audit --no-fund
 
-echo "[2/3] อัปเดต Backend โดยใช้กุญแจเดิม"
+echo "[2/4] อัปเดตกฎและดัชนีฐานข้อมูลก่อน"
+"${FIREBASE[@]}" deploy --only firestore --project "$PROJECT_ID"
+
+echo "รอให้ดัชนีฐานข้อมูลพร้อมใช้งาน..."
+for ATTEMPT in $(seq 1 60); do
+  INDEX_STATES="$(gcloud firestore indexes composite list --database="(default)" --project "$PROJECT_ID" --format="value(state)" 2>/dev/null || true)"
+  if [[ "$INDEX_STATES" != *CREATING* ]]; then
+    break
+  fi
+  sleep 5
+done
+
+echo "[3/4] อัปเดต Backend โดยใช้กุญแจเดิม"
 gcloud run deploy easy-bubble-api \
   --source functions \
   --region "$REGION" \
@@ -26,10 +38,10 @@ gcloud run deploy easy-bubble-api \
   --allow-unauthenticated \
   --quiet
 
-echo "[3/3] อัปเดตหน้าเว็บและกฎฐานข้อมูล"
+echo "[4/4] อัปเดตหน้าเว็บ"
 DEPLOYED=false
 for ATTEMPT in 1 2 3 4 5; do
-  if "${FIREBASE[@]}" deploy --only firestore,hosting --project "$PROJECT_ID"; then
+  if "${FIREBASE[@]}" deploy --only hosting --project "$PROJECT_ID"; then
     DEPLOYED=true
     break
   fi
