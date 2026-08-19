@@ -54,7 +54,9 @@ const minutes = (value) => { const [h, m] = timeText(value).split(":").map(Numbe
 const minutesOvernight = (start, end) => { const a = minutes(start); let b = minutes(end); if (b < a) b += 1440; return b - a; };
 const hours = (start, end) => round(minutesOvernight(start, end) / 60);
 const lateMinutes = (actual, start) => { let diff = minutes(actual) - minutes(start); if (diff < -720) diff += 1440; return Math.max(0, diff); };
+const earlyMinutes = (actual, start) => { let diff = minutes(start) - minutes(actual); if (diff < -720) diff += 1440; return Math.max(0, diff); };
 const overtimeMinutes = (clockIn, shiftEnd, clockOut) => { const start = minutes(clockIn); let end = minutes(shiftEnd); let out = minutes(clockOut); if (end <= start) end += 1440; if (out < start) out += 1440; return Math.max(0, out - end); };
+const eligibleOtHours = (totalMinutes) => number(totalMinutes) >= 60 ? 1 : number(totalMinutes) >= 30 ? 0.5 : 0;
 const dateRange = (from, to) => {
   const result = [], start = new Date(`${from}T12:00:00Z`), end = new Date(`${to}T12:00:00Z`);
   if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start > end) throw Error("ช่วงวันที่ไม่ถูกต้อง");
@@ -211,9 +213,13 @@ async function clockIn(user, body) {
   const date = today(), existing = await timesheetForDate(user.staff_id, date);
   if (existing?.clock_in) throw Error("วันนี้บันทึกเข้างานแล้ว");
   const staff = await getById("staff", user.staff_id), branch = await nearestBranch(body.lat, body.lng), shift = await shiftById(staff.shift_id), clock = nowTime(), late = lateMinutes(clock, shift.start_time);
-  const record = {record_id: id("TS"), staff_id: user.staff_id, staff_name: staff.nickname || staff.name, branch_id: branch.branch_id, branch_name: branch.name, date, clock_in: clock, clock_out: "", hours_worked: "", late_min: late, ot_hours: 0, ot_status: "none", note: "", clock_in_lat: number(body.lat), clock_in_lng: number(body.lng), clock_out_lat: "", clock_out_lng: "", created_at: nowText(), shift_id: shift.shift_id, shift_name: shift.name, shift_start: shift.start_time, shift_end: shift.end_time, late_grace_min: number(shift.late_grace_min), ot_grace_min: number(shift.ot_grace_min)};
+  const early = earlyMinutes(clock, shift.start_time), eligible = eligibleOtHours(early);
+  if (eligible && body.ot_confirmed !== true) return {requires_ot_confirmation: true, ot_type: "early", eligible_hours: eligible, minutes: early, clock};
+  const requested = eligible && body.request_ot === true, reason = requested ? text(body.ot_reason) : "";
+  if (requested && !reason) throw Error("กรุณาระบุเหตุผลขอ OT สั้นๆ");
+  const record = {record_id: id("TS"), staff_id: user.staff_id, staff_name: staff.nickname || staff.name, branch_id: branch.branch_id, branch_name: branch.name, date, clock_in: clock, clock_out: "", hours_worked: "", late_min: late, ot_hours: requested ? eligible : 0, ot_early_hours: requested ? eligible : 0, ot_late_hours: 0, ot_status: requested ? "pending" : "none", ot_reason: reason, note: "", clock_in_lat: number(body.lat), clock_in_lng: number(body.lng), clock_out_lat: "", clock_out_lng: "", created_at: nowText(), shift_id: shift.shift_id, shift_name: shift.name, shift_start: shift.start_time, shift_end: shift.end_time, late_grace_min: number(shift.late_grace_min), ot_grace_min: 30};
   await db.collection("timesheets").doc(record.record_id).set(record);
-  await telegram(`✅ ${record.staff_name} เข้างาน ${clock}\n🕒 ${shift.name} (${shift.start_time}–${shift.end_time})\n📍 ${branch.name}${late > number(shift.late_grace_min) ? `\n⚠️ สาย ${late} นาที` : ""}`);
+  await telegram(`✅ ${record.staff_name} เข้างาน ${clock}\n🕒 ${shift.name} (${shift.start_time}–${shift.end_time})\n📍 ${branch.name}${late ? `\n⚠️ สาย ${late} นาที` : ""}${requested ? `\n⏰ ขอ OT ${eligible} ชม.\nเหตุผล: ${reason}` : ""}`);
   const offerRef = db.collection("advance_offers").doc(`${date}_${user.staff_id}`), offer = await offerRef.get();
   return {...record, offer_advance: user.role !== "admin" && bangkokWeekday() === "Sun" && !offer.exists};
 }
@@ -221,9 +227,13 @@ async function clockOut(user, body) {
   const todayRow = await timesheetForDate(user.staff_id, today()), yesterdayRow = todayRow?.clock_out === "" ? null : await timesheetForDate(user.staff_id, yesterday());
   const row = [todayRow, yesterdayRow].find((item) => item?.clock_in && !item.clock_out);
   if (!row) throw Error("ไม่พบรายการเข้างานที่ยังไม่ได้ออก");
-  const branch = await nearestBranch(body.lat, body.lng), clock = nowTime(), shift = await shiftForTimesheet(row), worked = hours(row.clock_in, clock), otMinutes = overtimeMinutes(row.clock_in, shift.end_time, clock), otHours = otMinutes > number(shift.ot_grace_min) ? round(otMinutes / 60) : 0;
-  await db.collection("timesheets").doc(row.record_id).update({clock_out: clock, hours_worked: worked, ot_hours: otHours, ot_status: otHours ? "pending" : "none", clock_out_lat: number(body.lat), clock_out_lng: number(body.lng), updated_at: nowText()});
-  await telegram(`🚪 ${user.nickname || user.name} ออกงาน ${clock}\n📍 ${branch.name}${otHours ? `\n⏰ OT รอตรวจ ${otHours} ชม.` : ""}`);
+  const branch = await nearestBranch(body.lat, body.lng), clock = nowTime(), shift = await shiftForTimesheet(row), worked = hours(row.clock_in, clock), lateOtMinutes = overtimeMinutes(row.clock_in, shift.end_time, clock), lateEligible = eligibleOtHours(lateOtMinutes);
+  if (lateEligible && body.ot_confirmed !== true) return {requires_ot_confirmation: true, ot_type: "late", eligible_hours: lateEligible, minutes: lateOtMinutes, clock};
+  const lateRequested = lateEligible && body.request_ot === true, reason = lateRequested ? text(body.ot_reason) : "";
+  if (lateRequested && !reason) throw Error("กรุณาระบุเหตุผลขอ OT สั้นๆ");
+  const earlyOt = number(row.ot_early_hours, number(row.ot_hours)), lateOt = lateRequested ? lateEligible : 0, otHours = Math.min(1, round(earlyOt + lateOt)), reasons = [text(row.ot_reason), reason].filter(Boolean).join(" / ");
+  await db.collection("timesheets").doc(row.record_id).update({clock_out: clock, hours_worked: worked, ot_hours: otHours, ot_early_hours: earlyOt, ot_late_hours: lateOt, ot_status: otHours ? "pending" : "none", ot_reason: reasons, clock_out_lat: number(body.lat), clock_out_lng: number(body.lng), updated_at: nowText()});
+  await telegram(`🚪 ${user.nickname || user.name} ออกงาน ${clock}\n📍 ${branch.name}${otHours ? `\n⏰ OT รอตรวจ ${otHours} ชม.${reasons ? `\nเหตุผล: ${reasons}` : ""}` : ""}`);
   return {clock_out: clock, hours_worked: worked, ot_hours: otHours};
 }
 async function myDashboard(user) {
@@ -298,18 +308,23 @@ async function bulkUpsert(body) {
   const shift = await shiftById(body.shift_id || staff.shift_id), branch = await getById("branches", staff.branch_id), bounds = dateRange(body.date_from, body.date_to), rows = await queryRows("timesheets", {filters: [["staff_id", "==", staff.staff_id], ["date", ">=", body.date_from], ["date", "<=", body.date_to]], orders: [["date", "desc"]]}), existingDates = new Set(rows.map((row) => row.date)), skip = body.skip_dates || []; let created = 0, skipped = 0;
   for (const date of bounds) {
     if (skip.includes(date) || existingDates.has(date)) { skipped++; continue; }
-    const clockIn = timeText(body.clock_in), clockOut = timeText(body.clock_out), otMinutes = overtimeMinutes(clockIn, shift.end_time, clockOut), otHours = otMinutes > number(shift.ot_grace_min) ? round(otMinutes / 60) : 0, recordId = id("TS");
+    const clockIn = timeText(body.clock_in), clockOut = timeText(body.clock_out), otHours = eligibleOtHours(overtimeMinutes(clockIn, shift.end_time, clockOut)), recordId = id("TS");
     await db.collection("timesheets").doc(recordId).set({record_id: recordId, staff_id: staff.staff_id, staff_name: staff.nickname || staff.name, branch_id: staff.branch_id, branch_name: branch?.name || "", date, clock_in: clockIn, clock_out: clockOut, hours_worked: hours(clockIn, clockOut), late_min: lateMinutes(clockIn, shift.start_time), ot_hours: otHours, ot_status: otHours ? "pending" : "none", note: `เพิ่มย้อนหลังโดยแอดมิน: ${text(body.admin_note)}`, created_at: nowText(), shift_id: shift.shift_id, shift_name: shift.name, shift_start: shift.start_time, shift_end: shift.end_time, late_grace_min: number(shift.late_grace_min), ot_grace_min: number(shift.ot_grace_min)}); created++;
   }
   return {created, skipped};
 }
-async function saveLeave(body) { if (!body.staff_id || !body.date_from || !body.date_to) throw Error("กรุณากรอกข้อมูลให้ครบ"); dateRange(body.date_from, body.date_to); const leaveId = id("LV"); await db.collection("leaves").doc(leaveId).set({leave_id: leaveId, staff_id: body.staff_id, date_from: body.date_from, date_to: body.date_to, leave_type: body.leave_type || "personal", note: text(body.note), status: "approved", created_at: nowText()}); return {leave_id: leaveId}; }
+async function saveLeave(body) { if (!body.staff_id || !body.date_from || !body.date_to) throw Error("กรุณากรอกข้อมูลให้ครบ"); dateRange(body.date_from, body.date_to); const leaveId = id("LV"), leaveType = ["sick", "personal", "vacation", "unpaid", "double_deduct"].includes(body.leave_type) ? body.leave_type : "personal"; await db.collection("leaves").doc(leaveId).set({leave_id: leaveId, staff_id: body.staff_id, date_from: body.date_from, date_to: body.date_to, leave_type: leaveType, note: text(body.note), status: "approved", created_at: nowText()}); return {leave_id: leaveId}; }
 async function saveAdvance(body) { if (!body.staff_id || number(body.amount) <= 0) throw Error("กรุณากรอกจำนวนเงิน"); const advanceId = id("ADV"); await db.collection("advances").doc(advanceId).set({advance_id: advanceId, staff_id: body.staff_id, amount: number(body.amount), date: today(), note: text(body.note), status: "pending", deducted_month: "", created_at: nowText()}); return {advance_id: advanceId}; }
 async function approveOT(body) { if (!["approved", "rejected"].includes(body.status)) throw Error("สถานะไม่ถูกต้อง"); const row = await getById("timesheets", body.record_id); if (!row) throw Error("ไม่พบรายการ"); await db.collection("timesheets").doc(body.record_id).update({ot_status: body.status, updated_at: nowText()}); return true; }
 
 function countPaidLeaveDays(staffId, month, leaves) {
   const dates = new Set();
-  leaves.filter((row) => row.staff_id === staffId && row.status === "approved" && row.leave_type !== "unpaid").forEach((row) => dateRange(row.date_from, row.date_to).filter((date) => date.startsWith(month)).forEach((date) => dates.add(date)));
+  leaves.filter((row) => row.staff_id === staffId && row.status === "approved" && !["unpaid", "double_deduct"].includes(row.leave_type)).forEach((row) => dateRange(row.date_from, row.date_to).filter((date) => date.startsWith(month)).forEach((date) => dates.add(date)));
+  return dates.size;
+}
+function countDoubleDeductLeaveDays(staffId, month, leaves) {
+  const dates = new Set();
+  leaves.filter((row) => row.staff_id === staffId && row.status === "approved" && row.leave_type === "double_deduct").forEach((row) => dateRange(row.date_from, row.date_to).filter((date) => date.startsWith(month)).forEach((date) => dates.add(date)));
   return dates.size;
 }
 function legacyAdjustments(row = {}) {
@@ -327,15 +342,15 @@ async function payrollContext(month, staffId = "") {
 }
 function payrollItemFromContext(staff, month, adjustmentRows = [], context) {
   if (!staff) throw Error("ไม่พบพนักงาน");
-  const adjustments = sanitizeAdjustments(adjustmentRows), times = context.timesheets.filter((row) => row.staff_id === staff.staff_id), days = new Set(times.filter((row) => row.clock_in).map((row) => row.date)).size, paidLeave = countPaidLeaveDays(staff.staff_id, month, context.leaves), rate = number(staff.daily_rate), otHours = times.filter((row) => row.ot_status === "approved").reduce((sum, row) => sum + number(row.ot_hours), 0); let lateDeduct = 0;
+  const adjustments = sanitizeAdjustments(adjustmentRows), times = context.timesheets.filter((row) => row.staff_id === staff.staff_id), days = new Set(times.filter((row) => row.clock_in).map((row) => row.date)).size, paidLeave = countPaidLeaveDays(staff.staff_id, month, context.leaves), doubleLeaveDays = countDoubleDeductLeaveDays(staff.staff_id, month, context.leaves), rate = number(staff.daily_rate), otRate = number(staff.ot_rate), otHours = times.filter((row) => row.ot_status === "approved").reduce((sum, row) => sum + number(row.ot_hours), 0); let lateDeduct = 0;
   if (context.config.late_deduct_mode !== "none") for (const row of times) {
-    const fallback = context.shifts.find((shift) => shift.shift_id === row.shift_id) || context.shifts.find((shift) => shift.status === "active") || {}, shift = row.shift_start && row.shift_end ? {start_time: row.shift_start, end_time: row.shift_end, late_grace_min: row.late_grace_min} : fallback, late = Math.max(0, number(row.late_min) - number(shift.late_grace_min)), shiftMinutes = Math.max(1, minutesOvernight(shift.start_time, shift.end_time)); lateDeduct += rate / shiftMinutes * late;
+    lateDeduct += Math.max(0, number(row.late_min));
   }
-  const advance = context.advances.filter((row) => row.staff_id === staff.staff_id).reduce((sum, row) => sum + number(row.amount), 0), depositBalance = context.depositBalances?.[staff.staff_id] ?? round(number(staff.security_deposit_opening_balance) + context.deposits.filter((row) => row.staff_id === staff.staff_id).reduce((sum, row) => sum + number(row.amount), 0)), base = rate * (days + paidLeave), ot = otHours * number(staff.ot_rate), extra = adjustments.filter((row) => row.type === "add").reduce((sum, row) => sum + row.amount, 0), deduct = adjustments.filter((row) => row.type === "deduct").reduce((sum, row) => sum + row.amount, 0), deposit = adjustments.filter((row) => row.type === "security_deposit").reduce((sum, row) => sum + row.amount, 0);
-  return {staff_id: staff.staff_id, staff_name: staff.nickname || staff.name, bank_name: staff.bank_name || "", bank_account: staff.bank_account || "", days_worked: days, paid_leave_days: paidLeave, base_pay: round(base), ot_pay: round(ot), late_deduct: round(lateDeduct), advance_deduct: round(advance), adjustments, extra_pay: round(extra), other_deduct: round(deduct), security_deposit_deduct: round(deposit), security_deposit_balance: depositBalance, manual_adjust: round(extra - deduct - deposit), total_pay: round(base + ot - lateDeduct - advance + extra - deduct - deposit)};
+  const advance = context.advances.filter((row) => row.staff_id === staff.staff_id).reduce((sum, row) => sum + number(row.amount), 0), depositBalance = context.depositBalances?.[staff.staff_id] ?? round(number(staff.security_deposit_opening_balance) + context.deposits.filter((row) => row.staff_id === staff.staff_id).reduce((sum, row) => sum + number(row.amount), 0)), base = rate * (days + paidLeave), ot = otHours * otRate, doubleLeaveDeduct = doubleLeaveDays * rate, extra = adjustments.filter((row) => row.type === "add").reduce((sum, row) => sum + row.amount, 0), deduct = adjustments.filter((row) => row.type === "deduct").reduce((sum, row) => sum + row.amount, 0), deposit = adjustments.filter((row) => row.type === "security_deposit").reduce((sum, row) => sum + row.amount, 0);
+  return {staff_id: staff.staff_id, staff_name: staff.nickname || staff.name, bank_name: staff.bank_name || "", bank_account: staff.bank_account || "", daily_rate: rate, ot_rate: otRate, days_worked: days, paid_leave_days: paidLeave, double_leave_days: doubleLeaveDays, base_pay: round(base), ot_pay: round(ot), late_deduct: round(lateDeduct), double_leave_deduct: round(doubleLeaveDeduct), advance_deduct: round(advance), adjustments, extra_pay: round(extra), other_deduct: round(deduct), security_deposit_deduct: round(deposit), security_deposit_balance: depositBalance, manual_adjust: round(extra - deduct - deposit), total_pay: round(base + ot - lateDeduct - doubleLeaveDeduct - advance + extra - deduct - deposit)};
 }
 async function payrollItem(staff, month, adjustmentRows = []) { return payrollItemFromContext(staff, month, adjustmentRows, await payrollContext(month, staff.staff_id)); }
-const paidPayrollItem = (item, paid) => { const out = {...item, ...paid, adjustments: legacyAdjustments(paid), bank_name: item.bank_name, bank_account: item.bank_account, security_deposit_balance: number(paid.security_deposit_balance_after, item.security_deposit_balance), paid: true}; ["days_worked", "paid_leave_days", "base_pay", "ot_pay", "late_deduct", "advance_deduct", "extra_pay", "other_deduct", "security_deposit_deduct", "security_deposit_balance", "manual_adjust", "total_pay"].forEach((key) => { out[key] = number(out[key]); }); return out; };
+const paidPayrollItem = (item, paid) => { const out = {...item, ...paid, adjustments: legacyAdjustments(paid), bank_name: item.bank_name, bank_account: item.bank_account, security_deposit_balance: number(paid.security_deposit_balance_after, item.security_deposit_balance), paid: true}; ["daily_rate", "ot_rate", "days_worked", "paid_leave_days", "double_leave_days", "base_pay", "ot_pay", "late_deduct", "double_leave_deduct", "advance_deduct", "extra_pay", "other_deduct", "security_deposit_deduct", "security_deposit_balance", "manual_adjust", "total_pay"].forEach((key) => { out[key] = number(out[key]); }); return out; };
 async function savePayrollDraft(body) {
   if (!/^\d{4}-\d{2}$/.test(body.month || "")) throw Error("กรุณาเลือกเดือน");
   if ((await payrollRun(body.month, body.staff_id))?.status === "paid") throw Error("พนักงานคนนี้ยืนยันจ่ายแล้ว");
@@ -360,7 +375,7 @@ async function updateTimesheet(body) {
   const row = await getById("timesheets", body.record_id); if (!row) throw Error("ไม่พบรายการเวลา");
   if ((await payrollRun(String(row.date).slice(0, 7), row.staff_id))?.status === "paid") throw Error("จ่ายเงินเดือนรอบนี้แล้ว จึงแก้เวลาไม่ได้");
   if (!validTime(body.clock_in) || !validTime(body.clock_out)) throw Error("กรุณากรอกเวลาแบบ 24 ชั่วโมง เช่น 09:00");
-  const clockIn = timeText(body.clock_in), clockOut = timeText(body.clock_out), shift = await shiftForTimesheet(row), otMinutes = overtimeMinutes(clockIn, shift.end_time, clockOut), otHours = otMinutes > number(shift.ot_grace_min) ? round(otMinutes / 60) : 0; let status = otHours ? body.ot_status || "pending" : "none"; if (!["pending", "approved", "rejected", "none"].includes(status)) status = "pending";
+  const clockIn = timeText(body.clock_in), clockOut = timeText(body.clock_out), shift = await shiftForTimesheet(row); let status = body.ot_status || row.ot_status || "none", otHours = status === "none" ? 0 : eligibleOtHours(earlyMinutes(clockIn, shift.start_time) + overtimeMinutes(clockIn, shift.end_time, clockOut)); if (!["pending", "approved", "rejected", "none"].includes(status)) status = "pending"; if (!otHours) status = "none";
   await db.collection("timesheets").doc(row.record_id).update({clock_in: clockIn, clock_out: clockOut, hours_worked: hours(clockIn, clockOut), late_min: lateMinutes(clockIn, shift.start_time), ot_hours: otHours, ot_status: status, note: text(body.note || row.note), updated_at: nowText()}); return true;
 }
 async function finalizePayrollPerson(body) {
@@ -480,7 +495,7 @@ async function route(body) {
     case "importData": result = await importData(body); break;
     default: throw Error("ไม่พบคำสั่งที่ร้องขอ");
   }
-  if (MUTATING_ACTIONS.has(body.action)) await writeAudit(user, body.action, body, result);
+  if (MUTATING_ACTIONS.has(body.action) && !result?.requires_ot_confirmation) await writeAudit(user, body.action, body, result);
   return result;
 }
 
