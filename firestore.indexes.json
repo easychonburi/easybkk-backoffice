@@ -7,6 +7,31 @@
         {"fieldPath": "staff_id", "order": "ASCENDING"},
         {"fieldPath": "date", "order": "DESCENDING"}
       ]
+    },
+    {
+      "collectionGroup": "leaves",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "staff_id", "order": "ASCENDING"},
+        {"fieldPath": "date_to", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "advances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "status", "order": "ASCENDING"},
+        {"fieldPath": "staff_id", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "advances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "staff_id", "order": "ASCENDING"},
+        {"fieldPath": "status", "order": "ASCENDING"},
+        {"fieldPath": "deducted_month", "order": "ASCENDING"}
+      ]
     }
   ],
   "fieldOverrides": []
