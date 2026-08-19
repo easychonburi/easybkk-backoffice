@@ -82,6 +82,14 @@ tr:last-child td { border-bottom: 0; }
 .payroll-times select.inline-input { margin-top: 6px; }
 .payroll-times tr.is-editing { background: #f5fbfe; }
 .timesheet-view { line-height: 1.5; }
+.payroll-day-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.payroll-day-heading span { color: var(--muted); font-size: .85rem; }
+.payroll-work-range { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+.payroll-work-range small { color: var(--muted); }
+.payroll-ot-view { white-space: nowrap; }
+.payroll-note-mobile { display: none; }
+.payroll-time-edit { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.payroll-time-edit label { display: grid; gap: 3px; color: var(--muted); font-size: .78rem; }
 .btn-compact { min-height: 42px; padding: 8px 12px; border-radius: 11px; white-space: nowrap; }
 .ot-request { margin-bottom: 10px; }
 .ot-request-date { margin-top: 4px; }
@@ -181,9 +189,30 @@ body.is-loading { overflow: hidden; }
   .bank-card .btn { width: 100%; }
   .payroll-summary { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
   .payroll-summary .notice { padding: 11px; }
-  .payroll-times table td { grid-template-columns: 92px minmax(0,1fr); }
+  .payroll-times .payroll-day { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 0 10px; padding: 11px 12px; }
+  .payroll-times .payroll-day td { display: block; width: auto; padding: 0; border: 0; text-align: left; }
+  .payroll-times .payroll-day td::before { display: none; }
+  .payroll-times .payroll-day-head { grid-column: 1 / -1; }
+  .payroll-day-heading b { color: var(--navy); font-size: 1rem; }
+  .payroll-day-heading span { flex: 0 0 auto; padding: 4px 8px; border-radius: 999px; background: var(--pale); color: var(--navy); font-size: .74rem; }
+  .payroll-times .payroll-day-time { grid-column: 1 / -1; padding-top: 5px; }
+  .payroll-work-range { gap: 6px; }
+  .payroll-work-range b { font-size: 1.05rem; color: var(--ink); }
+  .payroll-work-range small { font-size: .82rem; }
+  .payroll-times .payroll-day-ot { grid-column: 1; padding-top: 7px; }
+  .payroll-times .payroll-day-note { grid-column: 1; padding-top: 5px; }
+  .payroll-times .payroll-day-ot.no-ot:not(:has(.timesheet-edit:not(.hidden))),.payroll-times .payroll-day-note.no-note:not(:has(.timesheet-edit:not(.hidden))) { display: none; }
+  .payroll-ot-view { display: inline-flex; padding: 4px 8px; border-radius: 999px; background: #fff0d9; color: #875019; font-size: .78rem; }
+  .payroll-note-desktop { display: none; }
+  .payroll-note-mobile { display: block; color: var(--muted); font-size: .8rem; }
+  .payroll-note-mobile summary { cursor: pointer; color: var(--blue); }
+  .payroll-note-mobile div { margin-top: 4px; color: var(--ink); }
+  .payroll-times .payroll-day-actions { grid-column: 2; grid-row: 3 / span 2; align-self: end; }
+  .payroll-times .payroll-day.is-paid .payroll-day-actions { display: none; }
+  .payroll-times .payroll-day.is-editing .payroll-day-actions { grid-column: 1 / -1; grid-row: auto; padding-top: 9px; }
   .payroll-times .timesheet-edit.actions { display: grid; grid-template-columns: 1fr 1fr; }
-  .payroll-times .btn-compact { width: 100%; }
+  .payroll-times .payroll-day-actions .btn-compact { width: auto; min-height: 38px; padding: 6px 11px; }
+  .payroll-times .payroll-day.is-editing .payroll-day-actions .btn-compact { width: 100%; }
   .adjustment-card { padding: 14px; }
   .adjustment-head { display: grid; }
   .adjustment-head .actions { display: grid; grid-template-columns: 1fr 1fr; }
